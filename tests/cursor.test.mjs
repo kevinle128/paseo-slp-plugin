@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,13 +16,14 @@ import { assertProjectionShape } from '../plugin/server/journal.ts';
 import { observeTaskProviders } from '../plugin/server/desk-task-runtime.ts';
 import { auditCapabilities } from '../plugin/server/capabilities.ts';
 import { createRoleInjection } from '../plugin/server/role-injection.ts';
+import { capture, sendCoverageOf } from '../plugin/server/supervision/capture.ts';
 import { OWNED_PROVIDER_IDS } from '../plugin/shared/runtime/families.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const ROLES = ['supervisor', 'lead', 'peer'];
 const CURSOR_VERSION = '2026.11.22-e9042b2';
 function fixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'slp-cursor-test-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'slp-cursor-test-')));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const candidate = join(dir, 'candidate');
   const { candidate: identity } = install(root, candidate);
@@ -95,8 +96,9 @@ test('managed provider entries extend the host Cursor client and run the launch-
     assert.equal(entry.env.SLP_FAMILY_BIN, undefined, 'wrapper transport, not a hook gate');
     assert.equal(Object.hasOwn(entry, 'paseoTools'), role === 'peer');
   }
-  const plan = configurationPlan(f.candidate, { version: 1 });
+  const plan = configurationPlan(f.candidate, { version: 1, agents: { providers: { cursor: { enabled: true } } } });
   assert.ok(Object.keys(plan.providers).every(id => !id.startsWith('slp-cursor-')), 'a stock host rejects extends cursor');
+  assert.deepEqual(plan.profiles.map(p => p.provider), ['slp-codex-supervisor', 'slp-codex-lead'], 'an enabled Cursor never becomes the standalone default');
 });
 
 test('managed Cursor launcher needs no session grant, enters `acp` and delivers role bytes', async t => {
@@ -198,4 +200,19 @@ test('capability audit records Cursor with no exact MCP preapproval and ACP MCP 
   assert.equal(rows.length, 6);
   assert.equal(rows.find(r => r.capabilityId === 'tool-policy.mcp-preapproval')?.status, 'unsupported');
   assert.equal(rows.find(r => r.capabilityId === 'mcp-servers.stdio-launch')?.status, 'supported');
+});
+
+test('supervision capture keeps Cursor brief, handback and send coverage unverified without exporting bodies', () => {
+  const got = capture({
+    agent: { id: 'peer-1', provider: 'slp-cursor-peer', workspaceId: 'wks', parentAgentId: 'lead-1', cwd: '/repo', title: null },
+    turnId: 'turn-1',
+    outcome: { kind: 'completed' },
+    timeline: [{ type: 'user_message', text: 'cursor-brief-body', messageId: 'm1' }, { type: 'assistant_message', text: 'cursor-handback-body', messageId: 'm2' }],
+  }, new Set(['lead-1']));
+  assert.equal(got?.kind, 'peer');
+  assert.deepEqual(got.brief, { state: 'unverified', reason: 'family-shape-unverified' });
+  assert.deepEqual(got.handback, { state: 'unverified', reason: 'family-shape-unverified' });
+  assert.deepEqual(got.sendCoverage, { state: 'unverified', reason: 'send-coverage-unverified' });
+  assert.ok(!JSON.stringify(got).includes('cursor-brief-body') && !JSON.stringify(got).includes('cursor-handback-body'), 'no message body is exported');
+  assert.deepEqual(sendCoverageOf('slp-cursor-lead'), { state: 'unverified', reason: 'send-coverage-unverified' });
 });
