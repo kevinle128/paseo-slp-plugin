@@ -8,7 +8,7 @@ import type { EmbeddedPayload } from "../../shared/contracts.ts";
 export const embeddedPayload: EmbeddedPayload = {
   "schemaVersion": 1,
   "candidate": {
-    "sha256": "04362c5385431e1aad082976b9b3a3db73e5993349b292148225bb3ff2b69bd8",
+    "sha256": "12a5ed28594ae9e4e54f7b8785a16b841a6b8fc050066a591fbbf6f02ca151e9",
     "files": [
       {
         "path": "bin/claude-role.mjs",
@@ -56,7 +56,7 @@ export const embeddedPayload: EmbeddedPayload = {
       },
       {
         "path": "package.json",
-        "sha256": "80086a20c22d43d759be7c56d8b58c648a7fa4a3f6316db4084a260100e4f359"
+        "sha256": "3c9291343e95dd659233ab2e70037a534e4ed62c441e926bd17a6553ff3b0df7"
       },
       {
         "path": "plugin/server/runtime/cli/agent-state.ts",
@@ -340,7 +340,7 @@ export const embeddedPayload: EmbeddedPayload = {
       }
     ]
   },
-  "payloadSha256": "7e0e5753faa6e9df7419e1e9201fc4671cdc87188e1e028ae5168578d76e73fc",
+  "payloadSha256": "650e6799d3e80ee365bceadc995e3ee9a2b21720c4d2b26ad3e7c5fc19ef3a56",
   "files": [
     {
       "path": "bin/claude-role.mjs",
@@ -410,9 +410,9 @@ export const embeddedPayload: EmbeddedPayload = {
     },
     {
       "path": "package.json",
-      "sha256": "80086a20c22d43d759be7c56d8b58c648a7fa4a3f6316db4084a260100e4f359",
+      "sha256": "3c9291343e95dd659233ab2e70037a534e4ed62c441e926bd17a6553ff3b0df7",
       "mode": 420,
-      "base64": "ewogICJuYW1lIjogInBhc2VvLXNscCIsCiAgInZlcnNpb24iOiAiMC45LjEiLAogICJwcml2YXRlIjogdHJ1ZSwKICAibGljZW5zZSI6ICJNSVQiLAogICJ0eXBlIjogIm1vZHVsZSIsCiAgImVuZ2luZXMiOiB7CiAgICAibm9kZSI6ICI+PTIyLjE4LjAgPDIzLjAuMCB8fCA+PTIzLjYuMCIKICB9LAogICJiaW4iOiB7CiAgICAicGFzZW8tc2xwIjogImJpbi9zbHAubWpzIgogIH0sCiAgInNjcmlwdHMiOiB7CiAgICAiaW5zdGFsbDpzbHAiOiAibm9kZSBiaW4vc2xwLm1qcyBpbnN0YWxsIC0tcGFzZW8taG9tZSIsCiAgICAiaW5zdGFsbDpzbHA6YXBwbHkiOiAibm9kZSBiaW4vc2xwLm1qcyBpbnN0YWxsIC0tcGFzZW8taG9tZSAtLWFwcGx5IC0tcmVsb2FkIiwKICAgICJ0ZXN0IjogIm5vZGUgc2NyaXB0cy90ZXN0LWlzb2xhdGVkLm1qcyIsCiAgICAiZTJlIjogIm5vZGUgZTJlL2NsaS5tanMiLAogICAgImNoZWNrIjogIm5vZGUgYmluL3NscC5tanMgaWRlbnRpdHkiLAogICAgImdlbmVyYXRlOnBsdWdpbi1wYXlsb2FkIjogIm5vZGUgc2NyaXB0cy9nZW5lcmF0ZS1wbHVnaW4tcGF5bG9hZC5tanMiLAogICAgImNoZWNrOnBsdWdpbi1wYXlsb2FkIjogIm5vZGUgc2NyaXB0cy9nZW5lcmF0ZS1wbHVnaW4tcGF5bG9hZC5tanMgLS1jaGVjayIsCiAgICAidHlwZWNoZWNrIjogInRzYyAtLW5vRW1pdCAtcCB0c2NvbmZpZy5qc29uIgogIH0sCiAgImRldkRlcGVuZGVuY2llcyI6IHsKICAgICJAZ2V0cGFzZW8vY2xpZW50IjogIjAuMTUuMiIsCiAgICAiQGdldHBhc2VvL3BsdWdpbiI6ICIwLjE1LjIiLAogICAgIkBnZXRwYXNlby9wcm90b2NvbCI6ICIwLjE1LjIiLAogICAgIkB0eXBlcy9ub2RlIjogIjI0LjEwLjEiLAogICAgIkB0eXBlcy9yZWFjdCI6ICIxOS4xLjE3IiwKICAgICJlc2J1aWxkIjogIjAuMjUuMTIiLAogICAgInJlYWN0IjogIjE5LjEuOSIsCiAgICAicmVhY3QtbmF0aXZlIjogIjAuODEuNSIsCiAgICAicmVhY3QtdGVzdC1yZW5kZXJlciI6ICIxOS4xLjkiLAogICAgInR5cGVzY3JpcHQiOiAiNS45LjMiLAogICAgInpvZCI6ICI0LjYuNSIKICB9Cn0K"
+      "base64": "ewogICJuYW1lIjogInBhc2VvLXNscCIsCiAgInZlcnNpb24iOiAiMC4xMC4wIiwKICAicHJpdmF0ZSI6IHRydWUsCiAgImxpY2Vuc2UiOiAiTUlUIiwKICAidHlwZSI6ICJtb2R1bGUiLAogICJlbmdpbmVzIjogewogICAgIm5vZGUiOiAiPj0yMi4xOC4wIDwyMy4wLjAgfHwgPj0yMy42LjAiCiAgfSwKICAiYmluIjogewogICAgInBhc2VvLXNscCI6ICJiaW4vc2xwLm1qcyIKICB9LAogICJzY3JpcHRzIjogewogICAgImluc3RhbGw6c2xwIjogIm5vZGUgYmluL3NscC5tanMgaW5zdGFsbCAtLXBhc2VvLWhvbWUiLAogICAgImluc3RhbGw6c2xwOmFwcGx5IjogIm5vZGUgYmluL3NscC5tanMgaW5zdGFsbCAtLXBhc2VvLWhvbWUgLS1hcHBseSAtLXJlbG9hZCIsCiAgICAidGVzdCI6ICJub2RlIHNjcmlwdHMvdGVzdC1pc29sYXRlZC5tanMiLAogICAgImUyZSI6ICJub2RlIGUyZS9jbGkubWpzIiwKICAgICJjaGVjayI6ICJub2RlIGJpbi9zbHAubWpzIGlkZW50aXR5IiwKICAgICJnZW5lcmF0ZTpwbHVnaW4tcGF5bG9hZCI6ICJub2RlIHNjcmlwdHMvZ2VuZXJhdGUtcGx1Z2luLXBheWxvYWQubWpzIiwKICAgICJjaGVjazpwbHVnaW4tcGF5bG9hZCI6ICJub2RlIHNjcmlwdHMvZ2VuZXJhdGUtcGx1Z2luLXBheWxvYWQubWpzIC0tY2hlY2siLAogICAgInR5cGVjaGVjayI6ICJ0c2MgLS1ub0VtaXQgLXAgdHNjb25maWcuanNvbiIKICB9LAogICJkZXZEZXBlbmRlbmNpZXMiOiB7CiAgICAiQGdldHBhc2VvL2NsaWVudCI6ICIwLjE1LjIiLAogICAgIkBnZXRwYXNlby9wbHVnaW4iOiAiMC4xNS4yIiwKICAgICJAZ2V0cGFzZW8vcHJvdG9jb2wiOiAiMC4xNS4yIiwKICAgICJAdHlwZXMvbm9kZSI6ICIyNC4xMC4xIiwKICAgICJAdHlwZXMvcmVhY3QiOiAiMTkuMS4xNyIsCiAgICAiZXNidWlsZCI6ICIwLjI1LjEyIiwKICAgICJyZWFjdCI6ICIxOS4xLjkiLAogICAgInJlYWN0LW5hdGl2ZSI6ICIwLjgxLjUiLAogICAgInJlYWN0LXRlc3QtcmVuZGVyZXIiOiAiMTkuMS45IiwKICAgICJ0eXBlc2NyaXB0IjogIjUuOS4zIiwKICAgICJ6b2QiOiAiNC42LjUiCiAgfQp9Cg=="
     },
     {
       "path": "plugin/server/runtime/cli/agent-state.ts",
