@@ -433,6 +433,13 @@ const FAMILY_FACTS: Partial<Record<FamilyId, FamilyFacts>> = {
     resumeEvidence: "session/load and unstable_resumeSession re-send cwd+mcpServers (acp-agent.ts:1753–1791)",
     resumeLimitation: "ACP capability supportsMcpServers gates the whole surface — a provider without it gets [] silently",
   },
+  cursor: {
+    exactPreapproval: false,
+    mcpLaunchRef: src("packages/server/src/server/agent/providers/acp-agent.ts"),
+    mcpLaunchEvidence: "CursorACPAgentClient inherits acpMcpServers(): config.mcpServers reach session/new when MCP is advertised",
+    resumeEvidence: "inherited session/load and unstable_resumeSession re-send cwd+mcpServers; the wrapper rearms entry delivery",
+    resumeLimitation: "needs a host that routes extends cursor to this client; MCP child env and model role delivery unproven",
+  },
   claude: {
     exactPreapproval: true,
     mcpLaunchRef: src("packages/server/src/server/agent/providers/claude/agent.ts"),

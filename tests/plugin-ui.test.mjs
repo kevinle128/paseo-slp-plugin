@@ -101,7 +101,7 @@ const statusView = (over = {}) => ({
     nodePath: '/usr/bin/node',
     baseline: 'fresh',
   },
-  families: ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity'].map(name => family(name)),
+  families: ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity', 'cursor'].map(name => family(name)),
   operation: null,
   conflicts: [],
   verifiedAt: '2026-09-18T00:00:10Z',

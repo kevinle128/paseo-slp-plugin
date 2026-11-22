@@ -3,7 +3,7 @@ import type { Binding, Provider } from './types.ts';
 // provider, model and the optional mode/thinking/features settings.
 // This module owns every rule a Binding must satisfy, whatever produced it.
 // Shared family data is dependency-free; binding validation stays at this adapter.
-import { PROVIDER_EXTENDS } from "../../../shared/runtime/families.ts";
+import { EXPLICIT_EXTENDS_FAMILY_IDS, PROVIDER_EXTENDS } from "../../../shared/runtime/families.ts";
 import { swe2ModelPattern } from "../../../shared/runtime/model-constraints.ts";
 export { swe2ModelPattern } from "../../../shared/runtime/model-constraints.ts";
 
@@ -13,7 +13,8 @@ export const dispositionPattern = /^[a-z][a-z0-9-]*$/i;
 
 // Paseo resolves an installed wrapper through its `extends` base adapter.
 // Devin itself is a derived ACP provider (`extends: acp`), so slp-devin-*
-// wrappers must extend the acp adapter; codex/pi/claude extend their own builtins.
+// wrappers must extend the acp adapter; slp-cursor-* wrappers extend the
+// host's Cursor ACP client; codex/pi/claude extend their own builtins.
 export const providerTransports = { ...PROVIDER_EXTENDS };
 export const transportOf = (family: string) => providerTransports[family as keyof typeof providerTransports] ?? family;
 
@@ -61,9 +62,10 @@ export function verifyProvider(inventory: Provider[] | undefined, id: string, fa
   const extraKeys = Object.keys(observed).filter(key => !providerRecordAllowedKeys.includes(key));
   if (extraKeys.length) throw new Error(`Unverified provider ${label}: unexpected field(s) ${extraKeys.map(key => `'${key}'`).join(', ')} — the provider object must be verbatim from list_providers; do not add, remove or edit fields`);
   const family = familyFor(observed.id);
-  // OpenCode must prove the ACP adapter explicitly; a missing extends is
-  // native/default host selection, outside the supported managed boundary.
-  if ((family === "opencode" && observed.extends !== "acp") || (observed.extends != null && observed.extends !== transportOf(family))) throw new Error(`Unverified provider family ${label}: the entry's 'extends' (${observed.extends}) does not match the '${family}' transport '${transportOf(family)}' — the provider object must be verbatim from list_providers; do not add, remove or edit fields`);
+  // OpenCode and Cursor must prove their adapter explicitly; a missing extends
+  // is native/default host selection, outside the supported managed boundary.
+  const explicit = (EXPLICIT_EXTENDS_FAMILY_IDS as readonly string[]).includes(family);
+  if ((explicit && observed.extends !== transportOf(family)) || (observed.extends != null && observed.extends !== transportOf(family))) throw new Error(`Unverified provider family ${label}: the entry's 'extends' (${observed.extends}) does not match the '${family}' transport '${transportOf(family)}' — the provider object must be verbatim from list_providers; do not add, remove or edit fields`);
   return { observed, family };
 }
 

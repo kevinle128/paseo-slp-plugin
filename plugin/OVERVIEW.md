@@ -19,7 +19,7 @@ Set up `.paseo-slp/workspace-protocol.md` for minimum sufficient coordination. A
 
 The repository desk preserves assignments, current briefs, decisions, dependencies, review and evidence. Its task queue supports Lead-invoked dispatch and integration, and planned handoff keeps an assignment's history. Open **Read SLP work** to inspect these records in the workspace. The desk distinguishes reported results from measured evidence; final acceptance stays with you.
 
-Each team member is an ordinary Paseo agent you can open and chat with. Agents can use Codex, Pi, Devin, Claude Code, OpenCode or Antigravity, with different providers and models in the same team.
+Each team member is an ordinary Paseo agent you can open and chat with. Agents can use Codex, Pi, Devin, Claude Code, OpenCode, Antigravity or Cursor, with different providers and models in the same team.
 
 ## What this changes in practice
 
@@ -71,3 +71,4 @@ See the [README](https://github.com/duongvm57/paseo-slp-plugin#readme) for the f
 - Node.js 22.18 or later in the 22 line, or Node.js 23.6 or later, for native TypeScript.
 - The CLI of each provider family you use, signed in on the daemon host.
 - Antigravity requires agy 1.4.4 or newer and this manager plugin; the standalone installer does not register its providers.
+- Cursor requires the Cursor CLI (`cursor-agent`), this manager plugin and a Paseo host that accepts `extends: cursor`; a stock host refuses the provider configuration. See [Cursor support](https://github.com/kevinle128/paseo-slp-plugin/blob/main/docs/cursor.md).

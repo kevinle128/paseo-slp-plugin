@@ -25,7 +25,7 @@ export interface FamilySpec {
    *              overlays the grant (codex/pi/claude).
    *  "wrapper" — shim + role wrapper; the ACP adapter drops systemPrompt, so
    *              the role bytes travel through the wrapper's session/prompt rewrite
-   *              (devin/opencode). */
+   *              (devin/opencode/cursor). */
   transport: "hook" | "wrapper";
   /** Provider-env variable that carries the frozen binary resolution —
    *  `SLP_<ID>_BIN`; the shim's per-family source and the provider env block. */
@@ -36,6 +36,14 @@ export interface FamilySpec {
   registered?: boolean;
   /** Base provider a generated `slp-*` entry extends. */
   extends: string;
+  /** Only the manager plugin publishes this family; the standalone installer
+   *  skips it. Cursor: a stock host rejects `extends: "cursor"` and refuses
+   *  the whole provider map, so standalone installs stay on stock bases. */
+  managedOnly?: boolean;
+  /** A launch needs the live provider entry to state this exact `extends`.
+   *  A missing value means default host selection, which is not this
+   *  family's managed transport, so it is refused. */
+  explicitExtends?: boolean;
   /** A managed session needs a live session-open hook grant before the
    *  wrapper/native child starts; capability/catalog probes stay available. */
   sessionGrant?: boolean;
@@ -50,8 +58,13 @@ export const FAMILIES = [
   { id: "pi", label: "Pi", transport: "hook", binEnv: "SLP_PI_BIN", extends: "pi", pickerRank: 2 },
   { id: "devin", label: "Devin", transport: "wrapper", binEnv: "SLP_DEVIN_BIN", extends: "acp", pickerRank: 3 },
   { id: "claude", label: "Claude Code", transport: "hook", binEnv: "SLP_CLAUDE_BIN", extends: "claude", pickerRank: 0 },
-  { id: "opencode", label: "OpenCode", transport: "wrapper", binEnv: "SLP_OPENCODE_BIN", extends: "acp", sessionGrant: true, pickerRank: 4 },
+  { id: "opencode", label: "OpenCode", transport: "wrapper", binEnv: "SLP_OPENCODE_BIN", extends: "acp", explicitExtends: true, sessionGrant: true, pickerRank: 4 },
   { id: "antigravity", label: "Antigravity", transport: "hook", binEnv: "SLP_ANTIGRAVITY_BIN", binary: "agy", extends: "antigravity", registered: true, pickerRank: 5 },
+  // `extends: "cursor"` selects the host's Cursor ACP client (model catalog,
+  // fast mode, initial slash commands) and runs the override command, which
+  // is this family's role wrapper. Only a host that accepts that base value
+  // can load these entries.
+  { id: "cursor", label: "Cursor", transport: "wrapper", binEnv: "SLP_CURSOR_BIN", binary: "cursor-agent", extends: "cursor", explicitExtends: true, managedOnly: true, pickerRank: 6 },
 ] as const satisfies readonly FamilySpec[];
 
 export type FamilyId = (typeof FAMILIES)[number]["id"];
@@ -78,6 +91,10 @@ export const HOOK_FAMILY_IDS: readonly FamilyId[] =
 export const WRAPPER_FAMILY_IDS: readonly FamilyId[] =
   FAMILIES.filter(f => f.transport === "wrapper").map(f => f.id);
 
+/** Families whose live provider entry must state its exact `extends`. */
+export const EXPLICIT_EXTENDS_FAMILY_IDS: readonly FamilyId[] =
+  FAMILIES.filter(f => "explicitExtends" in f && f.explicitExtends).map(f => f.id);
+
 export const GRANT_FAMILY_IDS: readonly FamilyId[] =
   FAMILIES.filter(f => f.transport === "hook" || ("sessionGrant" in f && f.sessionGrant)).map(f => f.id);
 
@@ -93,8 +110,13 @@ export const familyUsesRegistration = (family: FamilyId): boolean => {
   const spec = FAMILIES.find(f => f.id === family)!;
   return "registered" in spec && spec.registered;
 };
+/** Families the standalone installer publishes: no plugin registration and
+ *  no managed-only base. */
+export const STANDALONE_FAMILY_IDS: readonly FamilyId[] = FAMILIES
+  .filter(f => !("registered" in f && f.registered) && !("managedOnly" in f && f.managedOnly)).map(f => f.id);
 /** Deduped `extends` values, registry order — the OwnedProvider.extends enum
- *  domain (Devin/OpenCode contribute "acp"; hook families extend their own id). */
+ *  domain (Devin/OpenCode contribute "acp", Cursor contributes "cursor";
+ *  hook families extend their own id). */
 export const PROVIDER_EXTENDS_IDS: readonly ProviderExtends[] = [
   ...new Set(FAMILIES.map(f => f.extends)),
 ];
@@ -115,12 +137,17 @@ export const OWNED_PROVIDER_IDS: string[] = FAMILY_IDS.flatMap(family =>
   ROLES.map(role => ownedProviderId(family, role)),
 ).sort();
 
-// Persisted history has exactly three admitted vocabularies. These frozen
-// historical domains are intentionally independent of the current registry;
-// adding a future family does not authorize another history format.
+// Persisted history has exactly four admitted vocabularies: the current
+// registry plus three frozen historical domains. The frozen domains are
+// intentionally independent of the current registry; adding a future family
+// does not authorize another history format by itself.
 export const LEGACY_FAMILY_IDS = ['codex', 'pi', 'devin', 'claude'] as const;
 export const PRE_ANTIGRAVITY_FAMILY_IDS = ['codex', 'pi', 'devin', 'claude', 'opencode'] as const;
 export const PRE_ANTIGRAVITY_PROVIDER_IDS = PRE_ANTIGRAVITY_FAMILY_IDS.flatMap(family =>
+  ROLES.map(role => ownedProviderId(family, role)),
+).sort();
+export const PRE_CURSOR_FAMILY_IDS = ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity'] as const;
+export const PRE_CURSOR_PROVIDER_IDS = PRE_CURSOR_FAMILY_IDS.flatMap(family =>
   ROLES.map(role => ownedProviderId(family, role)),
 ).sort();
 export const LEGACY_OWNED_PROVIDER_IDS = LEGACY_FAMILY_IDS.flatMap(family =>
@@ -131,12 +158,14 @@ const exactSet = (keys: readonly string[], expected: readonly string[]) =>
     && expected.every(key => keys.includes(key));
 export function persistedFamilyIds(keys: readonly string[]): readonly FamilyId[] | null {
   if (exactSet(keys, FAMILY_IDS)) return FAMILY_IDS;
+  if (exactSet(keys, PRE_CURSOR_FAMILY_IDS)) return PRE_CURSOR_FAMILY_IDS;
   if (exactSet(keys, PRE_ANTIGRAVITY_FAMILY_IDS)) return PRE_ANTIGRAVITY_FAMILY_IDS;
   if (exactSet(keys, LEGACY_FAMILY_IDS)) return LEGACY_FAMILY_IDS;
   return null;
 }
 export function persistedProviderIds(keys: readonly string[]): readonly string[] | null {
   if (exactSet(keys, OWNED_PROVIDER_IDS)) return OWNED_PROVIDER_IDS;
+  if (exactSet(keys, PRE_CURSOR_PROVIDER_IDS)) return PRE_CURSOR_PROVIDER_IDS;
   if (exactSet(keys, PRE_ANTIGRAVITY_PROVIDER_IDS)) return PRE_ANTIGRAVITY_PROVIDER_IDS;
   if (exactSet(keys, LEGACY_OWNED_PROVIDER_IDS)) return LEGACY_OWNED_PROVIDER_IDS;
   return null;

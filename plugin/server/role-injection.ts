@@ -17,7 +17,7 @@
 //                        gap the grant stays the empty sentinel and the
 //                        gate fails closed.
 //
-// slp-devin-* and slp-opencode-* use shim+ACP wrappers: agent.create keeps
+// slp-devin-*, slp-opencode-* and slp-cursor-* use shim+ACP wrappers: agent.create keeps
 // config intact; role bytes are injected at the subprocess protocol boundary.
 // Managed OpenCode also requires the per-open grant before its child starts.
 //
