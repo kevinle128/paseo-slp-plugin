@@ -645,6 +645,19 @@ export function desiredProviderEntries(
  *  modeId, thinkingOptionId and featureValues it sets; an explicit
  *  `profiles` input on `activate` remains the override applied after
  *  routing — a per-role `family` pref still repoints the provider. */
+/** Paseo 0.15+ folds a profile's `featureValues` into `options` when it
+ *  stores the profile, and an empty map leaves nothing behind. Writing `{}`
+ *  therefore never persists, and post-patch verification would read the
+ *  missing key as a partial write. An empty map carries no setting, so drop it. */
+function withoutEmptyFeatureValues<T extends Record<string, unknown>>(profile: T): T {
+  const values = profile.featureValues;
+  if (values === null || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 0) {
+    return profile;
+  }
+  const { featureValues: _empty, ...rest } = profile;
+  return rest as T;
+}
+
 export function desiredProfiles(
   family: FamilyName,
   prefs?: { supervisor?: ProfilePrefsValue; lead?: ProfilePrefsValue },
@@ -669,7 +682,7 @@ export function desiredProfiles(
       if (value === null) delete merged[key];
       else merged[key] = value;
     }
-    return merged as Pick<ProfileValue, "model" | "modeId" | "thinkingOptionId" | "featureValues">;
+    return withoutEmptyFeatureValues(merged) as Pick<ProfileValue, "model" | "modeId" | "thinkingOptionId" | "featureValues">;
   };
   return [
     {
@@ -713,7 +726,7 @@ export function applyProfilePrefs(
     if (value === null) delete next[key];
     else next[key] = value;
   }
-  return next as ProfileValue;
+  return withoutEmptyFeatureValues(next) as ProfileValue;
 }
 
 /** Settings-driven repoint of a live owned profile under a binding (Phase
@@ -731,7 +744,7 @@ function applyRoleRouting(
   for (const key of ["model", "modeId", "thinkingOptionId", "featureValues"] as const) {
     if (choice[key] !== undefined) next[key] = choice[key];
   }
-  return next as ProfileValue;
+  return withoutEmptyFeatureValues(next) as ProfileValue;
 }
 
 /** An effective routing (stored choice plus any `profiles` family override)
