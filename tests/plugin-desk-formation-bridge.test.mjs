@@ -19,13 +19,23 @@ const bridgeSha256 = createHash('sha256').update(readFileSync(join(root, 'bin/sl
 const at = '2026-01-01T00:00:00.000Z';
 const codexProfile = { id: 'slp-lead', provider: 'slp-codex-lead', model: 'gpt-6-luna', modeId: 'full-access', thinkingOptionId: 'high', featureValues: { fast_mode: true } };
 
+// Activation stores runtimePath under the realpath of the daemon home.
+// Placement then requires workspaceDirectory to equal its own realpath.
+// os.tmpdir() on macOS is often the /tmp symlink, so this fixture records
+// those canonical strings instead of the symlink path.
+function canonicalRepo(t, prefix) {
+  const repo = gitRepo(t, prefix);
+  repo.dir = realpathSync(repo.dir);
+  return repo;
+}
+
 function managedBridge(t, options = {}) {
   const { afterCreate, profile = codexProfile, reportedModeId, omitCurrentModeId, providerEntries, registration = 'ready', registerIn = 'child' } = options;
   const providerModes = Object.hasOwn(options, 'providerModes') ? options.providerModes : [{ id: 'full-access' }];
   const includeProviderModes = options.includeProviderModes !== false;
-  const dir = mkdtempSync(join(tmpdir(), 'slp-managed-formation-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'slp-managed-formation-')));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
-  const repo = gitRepo(t, 'slp-managed-formation-repo-');
+  const repo = canonicalRepo(t, 'slp-managed-formation-repo-');
   const home = join(dir, 'home');
   const stableRoot = join(home, 'slp-runtime');
   mkdirSync(stableRoot, { recursive: true });
@@ -438,7 +448,7 @@ for(const registration of ['missing','revoked','wrong-role'])test('wire '+regist
 const commitFixture=dir=>execFileSync('git',['-C',dir,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--allow-empty','-qm','fixture base']);
 for(const registerIn of ['child','caller'])test('wire Supervisor Lead in another repository waits on the target desk ('+registerIn+' registration)',async t=>{
  const f=await boundFormationSeat(t,{callerRole:'supervisor',registerIn});commitFixture(f.repo.dir);
- const other=gitRepo(t,'slp-managed-formation-other-');commitFixture(other.dir);f.repos.set(other.dir,other);
+ const other=canonicalRepo(t,'slp-managed-formation-other-');commitFixture(other.dir);f.repos.set(other.dir,other);
  f.workspaceSnapshots.set('other',{id:'other',workspaceDirectory:other.dir,status:'done',archivingAt:null});
  const input={...seatCreate('cross-repo-'+registerIn),placement:{kind:'existing',workspaceId:'other',cwd:other.dir,reason:'other repository'}};
  const out=await callTool(f,501,'slp_seat_create',input);
@@ -463,7 +473,7 @@ for(const registerIn of ['child','caller'])test('wire Supervisor Lead in another
 });
 for(const role of ['lead','peer'])test('wire Lead caller forming a '+role+' in another repository stays rejected',async t=>{
  const f=await boundFormationSeat(t,{providerEntries:role==='peer'?peerEntries:undefined});commitFixture(f.repo.dir);if(role==='peer')peerPool(f,1);
- const other=gitRepo(t,'slp-managed-formation-other-');commitFixture(other.dir);
+ const other=canonicalRepo(t,'slp-managed-formation-other-');commitFixture(other.dir);
  f.workspaceSnapshots.set('other',{id:'other',workspaceDirectory:other.dir,status:'done',archivingAt:null});
  const out=await callTool(f,601,'slp_seat_create',{...seatCreate('cross-'+role),role,placement:{kind:'existing',workspaceId:'other',cwd:other.dir,reason:'other repository'}});
  const result=out.result??out;
