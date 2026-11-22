@@ -490,24 +490,25 @@ export const routingChoiceDiffers = (
  *  catalog key), then the thinking option resolves against the KEPT model —
  *  a kept option must still be declared by that model. `features`/`feature`
  *  always clear: feature ids are per-provider, and undeclared raw-JSON keys
- *  would persist silently into the new family's routing. An unloaded
- *  (undefined) or errored catalog lists nothing, so everything dependent
- *  clears — deliberate (B20): re-pressing the active chip clears features,
- *  and a not-yet-loaded catalog clears without re-prefill on arrival,
- *  because a deferred re-prefill would race with edits made during the
- *  load. Stored prefill is unaffected — this runs only on an explicit user
- *  pick; the pickers' "(stored)" escape hatches still cover stored values the
- *  catalog doesn't list. */
+ *  would persist silently into the new family's routing. Feature values still
+ *  clear on this explicit switch. An unloaded or errored catalog keeps the
+ *  stored model, mode, and thinking option only when the Human re-selects the
+ *  same provider. Switching to a different provider clears them, so the new
+ *  provider does not inherit the previous one's settings. A loaded catalog
+ *  keeps a value only when it lists that value. */
 export function applyFamilyChange(
-  form: Pick<RoutingRoleForm, "model" | "modeId" | "thinkingOptionId">,
+  form: { family: FamilyName | ""; model: string; modeId: string; thinkingOptionId: string },
   family: FamilyName,
   catalog: CatalogResult | undefined,
 ): RoutingRoleForm {
-  const model = catalog?.models.some(entry => entry.id === form.model.trim()) ? form.model : "";
-  const modeId = catalog?.modes.some(mode => mode.id === form.modeId.trim()) ? form.modeId : "";
-  const thinking = thinkingOptionsFor(catalog, model);
-  const thinkingOptionId =
-    thinking != null && thinking.options.some(option => option.id === form.thinkingOptionId.trim())
+  const catalogReady = catalog !== undefined && catalog.error == null;
+  const retain = form.family === family && !catalogReady;
+  const model = retain ? form.model : catalogReady && catalog.models.some(entry => entry.id === form.model.trim()) ? form.model : "";
+  const modeId = retain ? form.modeId : catalogReady && catalog.modes.some(mode => mode.id === form.modeId.trim()) ? form.modeId : "";
+  const thinking = thinkingOptionsFor(catalogReady ? catalog : undefined, model);
+  const thinkingOptionId = retain
+    ? form.thinkingOptionId
+    : thinking != null && thinking.options.some(option => option.id === form.thinkingOptionId.trim())
       ? form.thinkingOptionId
       : "";
   return { family, model, modeId, thinkingOptionId, features: "", feature: {} };
@@ -779,6 +780,7 @@ export function buildPeerSeat(
   form: PeerSeatForm,
   stored: PeerPoolOptionValue | undefined,
   defs: CatalogResult["features"],
+  advertisedModes?: readonly { id: string }[],
 ): PeerSeatBuild {
   const id = form.id.trim();
   if (!PEER_SEAT_ID.test(id)) {
@@ -803,6 +805,12 @@ export function buildPeerSeat(
   }
   if (form.enabled && form.family === "") return { error: `${label}: an enabled seat needs a provider family` };
   if (form.enabled && form.model.trim() === "") return { error: `${label}: an enabled seat needs a model` };
+  // A provider that advertises permission modes has no safe implicit mode:
+  // seat creation refuses an unresolved mode, and picking one here could
+  // grant a different permission than the Human chose. Save must name the gap.
+  if (form.enabled && advertisedModes !== undefined && advertisedModes.length > 0 && form.modeId.trim() === "") {
+    return { error: `${label}: this provider advertises permission modes but the preset has no mode; choose a permission mode before saving` };
+  }
   const option: Record<string, unknown> = { ...(stored ?? {}) };
   if (!form.preset) delete option.priority;
   option.id = id;
@@ -811,6 +819,9 @@ export function buildPeerSeat(
   option.model = form.model.trim();
   option.enabled = form.enabled;
   option.availability = form.preset ? stored?.availability ?? "ready" : "ready";
+  // Save writes the displayed mode only. peerSeatForm and applyFamilyChange
+  // already keep a stored mode while its catalog is not loaded, so an empty
+  // form mode here is the Human's choice (or a provider change).
   const modeId = form.modeId.trim();
   if (modeId) option.modeId = modeId;
   else delete option.modeId;
@@ -868,6 +879,7 @@ export function buildPeerPool(
   defsFor: (seat: PeerSeatForm) => CatalogResult["features"],
   storedOptions?: ReadonlyMap<string, PeerPoolOptionValue>,
   storedPool?: PeerPoolValue | null,
+  modesFor?: (seat: PeerSeatForm) => readonly { id: string }[] | undefined,
 ): PeerPoolBuild {
   const policy = form.policy.trim();
   if (!policy) return { error: "pool policy is required" };
@@ -877,7 +889,7 @@ export function buildPeerPool(
     // Look the stored option up by the id the row had at load (storedId),
     // not the edited id — a rename/convert must keep passthrough fields the
     // form does not model (§7.4.D).
-    const built = buildPeerSeat(seat, storedOptions?.get(seat.storedId ?? seat.id.trim()), defsFor(seat));
+    const built = buildPeerSeat(seat, storedOptions?.get(seat.storedId ?? seat.id.trim()), defsFor(seat), modesFor?.(seat));
     if ("error" in built) return { error: built.error, seatIndex: index };
     if (ids.has(built.option.id)) return { error: `duplicate seat id "${built.option.id}"`, seatIndex: index };
     ids.add(built.option.id);

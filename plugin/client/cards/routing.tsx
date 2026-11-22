@@ -155,11 +155,11 @@ export function useRoutingCard({ target, targetKey, isCurrentKey, statusView, ca
 
   // An explicit family switch is not a single-field write: dependents
   // re-validate against the NEW family's catalog — applyFamilyChange keeps
-  // only the model/mode/thinking values the new catalog lists and always
-  // clears the per-provider feature values. Two edges are deliberate (B20):
-  // re-pressing the active chip still clears features, and a family whose
-  // catalog is not loaded yet clears dependents with no re-prefill on
-  // arrival — re-prefill would race with edits made during the load.
+  // only the model/mode/thinking values a loaded catalog lists and always
+  // clears the per-provider feature values. Re-pressing the active chip
+  // still clears features. A catalog that is not loaded yet, or that failed,
+  // keeps the stored model, mode, and thinking option only when the provider
+  // did not change.
   // Same dirty/saved discipline as the field setters.
   const setFamily = (
     role: RoutingRole,

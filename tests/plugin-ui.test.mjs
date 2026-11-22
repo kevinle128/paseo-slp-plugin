@@ -574,9 +574,18 @@ test('applyFamilyChange resets dependents against the new family catalog', () =>
   assert.equal(toPi.model, 'pi-model');
   assert.equal(toPi.modeId, '');
 
-  // Catalog not loaded (undefined) or errored (empty lists) → nothing keeps.
-  const notLoaded = applyFamilyChange(form({ model: 'pi-model' }), 'pi', undefined);
+  // A different provider with no catalog answer drops the previous provider's
+  // settings. Re-selecting the same provider keeps them until the catalog answers.
+  const notLoaded = applyFamilyChange(form({ model: 'pi-model', modeId: 'bypass', thinkingOptionId: 'high' }), 'pi', undefined);
   assert.equal(notLoaded.model, '');
+  assert.equal(notLoaded.modeId, '');
+  assert.equal(notLoaded.thinkingOptionId, '');
+  assert.equal(notLoaded.features, '');
+  const reselected = applyFamilyChange(form({ thinkingOptionId: 'high' }), 'devin', undefined);
+  assert.equal(reselected.model, 'swe-2-max');
+  assert.equal(reselected.modeId, 'bypass');
+  assert.equal(reselected.thinkingOptionId, 'high');
+  assert.equal(reselected.features, '');
   const errored = applyFamilyChange(
     form(),
     'codex',
@@ -584,6 +593,10 @@ test('applyFamilyChange resets dependents against the new family catalog', () =>
   );
   assert.equal(errored.model, '');
   assert.equal(errored.modeId, '');
+  assert.equal(errored.features, '');
+  const erroredSame = applyFamilyChange(form(), 'devin', catalogResult({ error: 'Catalog query failed' }));
+  assert.equal(erroredSame.model, 'swe-2-max');
+  assert.equal(erroredSame.modeId, 'bypass');
 
   // Same-family re-pick keeps what the catalog declares — features still
   // clear (the rule is unconditional).
@@ -880,6 +893,88 @@ test('buildPeerPool rejects the constraints validateCatalog enforces', () => {
   const withPriority = buildPeerSeat(seat('a'), { ...seat('a'), provider: 'codex', roles: ['peer'], availability: 'ready', suitableFor: ['w'], avoidFor: [], notes: 'n', priority: 9 }, []);
   assert.ok('option' in withPriority);
   assert.ok(!('priority' in withPriority.option), 'priority must not survive a save');
+});
+
+test('buildPeerPool refuses an enabled seat with no mode when the provider advertises modes', () => {
+  const seat = {
+    id: 'balanced', family: 'cursor', model: 'composer', modeId: '', thinkingOptionId: '',
+    enabled: true, features: '', feature: {}, suitableFor: 'work', avoidFor: 'none', notes: 'n',
+  };
+  const form = { policy: 'p', seats: [seat], quotaFallbackEnabled: false, quotaFallbackId: '' };
+  const modes = [{ id: 'agent' }, { id: 'plan' }];
+  const refused = buildPeerPool(form, () => [], undefined, undefined, () => modes);
+  assert.match(refused.error, /advertises permission modes/);
+  const parked = buildPeerPool({ ...form, seats: [{ ...seat, enabled: false }] }, () => [], undefined, undefined, () => modes);
+  assert.ok('pool' in parked, `a disabled preset may omit a mode: ${parked.error}`);
+  const chosen = buildPeerPool({ ...form, seats: [{ ...seat, modeId: 'agent' }] }, () => [], undefined, undefined, () => modes);
+  assert.equal(chosen.pool.options[0].modeId, 'agent');
+  const unloaded = buildPeerPool(form, () => []);
+  assert.ok('pool' in unloaded, `an unloaded catalog does not invent a mode requirement: ${unloaded.error}`);
+});
+
+test('a stored mode survives form build and save while the provider catalog is not loaded', () => {
+  const option = {
+    id: 'balanced', provider: 'cursor', roles: ['peer'], model: 'composer', enabled: true,
+    availability: 'ready', modeId: 'agent', suitableFor: [], avoidFor: [], notes: '',
+    displayName: 'Balanced', description: 'Ordinary work', runtimeRule: 'none',
+    effortPolicy: { kind: 'select' }, modelProvider: '', selectionHints: '', templateOrigin: null,
+  };
+  const pool = {
+    version: 2, policy: 'Choose a mode', quotaFallback: { enabled: false, optionId: null }, options: [option],
+  };
+  const form = peerPoolForm(pool);
+  assert.equal(form.seats[0].modeId, 'agent', 'building the form with no catalog keeps the stored mode');
+  const kept = applyFamilyChange(form.seats[0], 'cursor', undefined);
+  assert.equal(kept.modeId, 'agent');
+  assert.equal(kept.model, 'composer');
+  const roundTrip = buildPeerPool(form, () => [], new Map([[option.id, option]]), pool, () => undefined);
+  assert.ok('pool' in roundTrip, roundTrip.error);
+  assert.equal(roundTrip.pool.options[0].modeId, 'agent');
+  assert.deepEqual(roundTrip.pool, pool);
+  const wiped = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], modeId: '' }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in wiped, wiped.error);
+  assert.equal(wiped.pool.options[0].modeId, undefined, 'Save writes the displayed (cleared) mode even while the catalog is unloaded');
+  const away = applyFamilyChange(form.seats[0], 'codex', undefined);
+  const back = applyFamilyChange({ ...form.seats[0], ...away }, 'cursor', undefined);
+  assert.equal(back.modeId, '');
+  const roundTripped = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], ...back, enabled: false }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in roundTripped, roundTripped.error);
+  assert.equal(roundTripped.pool.options[0].modeId, undefined, 'a provider round-trip does not resurrect the stored mode');
+  const switched = applyFamilyChange(form.seats[0], 'codex', undefined);
+  assert.equal(switched.model, '');
+  assert.equal(switched.modeId, '');
+  const moved = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], ...switched, enabled: true, model: 'other' }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in moved, moved.error);
+  assert.equal(moved.pool.options[0].provider, 'codex');
+  assert.equal(moved.pool.options[0].modeId, undefined, 'a provider change must not inherit the previous mode');
+  const unset = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], family: '', model: '', modeId: '', enabled: false }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in unset, unset.error);
+  assert.equal(unset.pool.options[0].provider, '');
+  assert.equal(unset.pool.options[0].modeId, undefined, 'an unset provider must not keep the previous mode');
 });
 
 test('draft uids are fresh per seat, ignored by form equality, and copied fresh', () => {

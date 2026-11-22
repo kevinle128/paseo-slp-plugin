@@ -22,6 +22,10 @@
 // RECOVERY_REQUIRED. Repository locks retain operator-only recovery.
 // stop() closes connections, closes the server,
 // unlinks the socket and releases the lock — in that order.
+// A start that fails with no active binding logs one diagnostic and stays
+// unavailable. The next managed seat create retries that start once, on a
+// single flight, so a binding written after plugin load is picked up
+// without a reload. Any other unavailable state is left fail-open.
 
 import { deliveryMessageIds, matchesDelivery } from "./delivered-input.ts";
 import { z } from "zod";
@@ -2156,12 +2160,37 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
   const ready = new Promise<"listening" | "unavailable">(resolve => {
     readyResolve = resolve;
   });
+  // One in-flight lifecycle. The slot is cleared before `ready` wakes
+  // waiters, so a seat create that observed the binding gap can start a
+  // fresh attempt without joining the attempt that just failed.
+  let startFlight: Promise<void> | null = null;
+  let pendingReady: "listening" | "unavailable" | null = null;
+  const publishReady = (outcome: "listening" | "unavailable"): void => {
+    pendingReady = outcome;
+  };
+  const bindingGap = (current: DeskBridgeState): boolean =>
+    current.kind === "unavailable" && current.reason.includes("no active SLP binding");
 
-  async function start(): Promise<void> {
+  function start(): Promise<void> {
+    if (state.kind === "listening") return Promise.resolve();
+    if (startFlight !== null) return startFlight;
+    const flight = runStart().finally(() => {
+      startFlight = null;
+      if (pendingReady !== null) {
+        const outcome = pendingReady;
+        pendingReady = null;
+        readyResolve(outcome);
+      }
+    });
+    startFlight = flight;
+    return flight;
+  }
+
+  async function runStart(): Promise<void> {
     if (stopped) return;
     if (platform === "win32") {
       state = { kind: "unavailable", code: "CAPABILITY_GAP", reason: "no Windows transport — unix-socket only" };
-      readyResolve("unavailable");
+      publishReady("unavailable");
       return;
     }
     /** F8: stop() may run while an await below is still pending — after each
@@ -2179,7 +2208,7 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
       }
       releaseLock();
       state = { kind: "unavailable", code: "CAPABILITY_GAP", reason: "desk bridge stopped" };
-      readyResolve("unavailable");
+      publishReady("unavailable");
       return true;
     };
     try {
@@ -2207,7 +2236,7 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
       if (!lock.ok) {
         state = { kind: "unavailable", code: lock.code, reason: lock.reason };
         warn(`bridge-${lock.code}`, `slp: desk bridge ${lock.code}: ${lock.reason}`);
-        readyResolve("unavailable");
+        publishReady("unavailable");
         return;
       }
       // The socket file without a live lock holder is leftover, never a
@@ -2241,19 +2270,25 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
           code: "CAPABILITY_GAP",
           reason: `socket mode could not be pinned: ${(error as Error).message}`,
         };
-        readyResolve("unavailable");
+        publishReady("unavailable");
         return;
       }
       store = createStore(stableRoot);
       state = { kind: "listening", socketPath: paths.socketPath };
-      readyResolve("listening");
+      publishReady("listening");
     } catch (error) {
       releaseLock();
       const reason = (error as Error).message ?? String(error);
       const parsed = isRecord(error) ? DeskErrorCodeSchema.safeParse(error.code) : null;
       const code: DeskErrorCode = parsed?.success === true ? parsed.data : "CAPABILITY_GAP";
-      state = { kind: "unavailable", code, reason: `stable-root resolution failed: ${reason.slice(0, 300)}` };
-      readyResolve("unavailable");
+      const detail = reason.slice(0, 300);
+      // One line per distinct failure. Repeated binding gaps stay quiet.
+      warn(
+        `stable-root:${code}:${detail}`,
+        `slp: stable-root resolution failed: ${detail}`,
+      );
+      state = { kind: "unavailable", code, reason: `stable-root resolution failed: ${detail}` };
+      publishReady("unavailable");
     }
   }
 
@@ -2307,8 +2342,14 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
     if (typeof handle !== "string" || handle.length === 0) return undefined;
     // A create can race contribute(): wait the bounded budget for start()
     // to settle, then fail open — a bridge that never started never blocks
-    // the mint, it just adds no transport.
+    // the mint, it just adds no transport. A settled binding gap is the
+    // exception: activation may have written the receipt after load, so
+    // try start() once more. The flight is shared, and a gap that remains
+    // (or any other refusal) still returns undefined.
     await Promise.race([ready, sleep(LEDGER_LIMITS.lockWaitMs)]);
+    if (!stopped && bindingGap(state)) {
+      await Promise.race([start(), sleep(LEDGER_LIMITS.lockWaitMs)]);
+    }
     if (state.kind !== "listening") {
       warn("graft-unavailable", "slp: desk bridge is not listening — seat mints keep env handle only");
       return undefined;
@@ -2365,10 +2406,12 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
 
   return {
     /** Kick the lifecycle — resolves the verified stable root, takes the
-     *  lock, binds the socket. Safe to fire-and-forget; state/ready carry
-     *  the outcome. */
+     *  lock, binds the socket. Safe to fire-and-forget. A later call while
+     *  a flight is running joins it; a call once listening is a no-op. A
+     *  binding-gap failure may be started again from the seat graft. */
     start,
-    /** Resolves "listening" or "unavailable" exactly once. */
+    /** Resolves "listening" or "unavailable" from the first start only.
+     *  A later binding-gap restart updates `state` and does not re-arm this. */
     whenReady: () => ready,
     state: () => state,
     socketPath: () => (state.kind === "listening" ? state.socketPath : null),

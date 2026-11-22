@@ -80,14 +80,16 @@ for (const [name, spec] of Object.entries(cards)) {
     if (name === 'pool') assert.equal('error' in state.current.poolBuild, false, 'fixture reaches pool mutation adapter');
     let older;
     act(() => { older = spec.run(state.current); });
+    if (name === 'pool') await act(async () => read.calls[1].resolve(spec.result('/a')));
     assert.equal(write.calls.length, 1);
     if (['pool', 'jev', 'supervision'].includes(name)) assert.equal(write.calls[0].input.expectedSha256, sha, 'CAS snapshot unchanged');
     await update({ home: '/b' });
     assert.equal(spec.busy(state.current), false, 'target switch releases abandoned busy');
-    await act(async () => read.calls[1].resolve(spec.result('/b')));
+    await act(async () => read.calls[name === 'pool' ? 2 : 1].resolve(spec.result('/b')));
     act(() => spec.edit(state.current));
     let newer;
     act(() => { newer = spec.run(state.current); });
+    if (name === 'pool') await act(async () => read.calls[3].resolve(spec.result('/b')));
     assert.equal(write.calls.length, 2);
     await act(async () => {
       if (reject) write.calls[0].reject(new Error('stale mutation failure'));
@@ -98,7 +100,9 @@ for (const [name, spec] of Object.entries(cards)) {
     assert.notEqual(spec.value(state.current), spec.expected('/stale'));
     if (name === 'pool') assert.equal(state.current.poolError, null);
     if (name === 'supervision') assert.equal(state.current.cardError, null);
-    await act(async () => { write.calls[1].resolve(spec.result('/b')); await newer; });
+    await act(async () => { write.calls[1].resolve(spec.result('/b')); });
+    if (name === 'pool') await act(async () => read.calls[4].resolve(spec.result('/b')));
+    await act(async () => { await newer; });
     assert.equal(spec.busy(state.current), false);
   });
 }
