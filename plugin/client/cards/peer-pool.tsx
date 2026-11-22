@@ -407,7 +407,7 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
 
   // Save dispatches the same poolBuild the gate compared. It re-reads first
   // and writes only when that sha is still the draft's baseline; a moved
-  // file is shown and not overwritten. The screen then reads again and
+  // file is a CAS conflict that keeps the draft. The screen then reads again and
   // displays the stored pool, not the request echo. A build error is
   // surfaced AND opens the offending seat's editor; a CAS refusal lands in
   // the card's notice area (§7.4.D) with a Reload affordance.
@@ -427,38 +427,33 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
       if (!ticket.isCurrent()) return;
       const latest = fresh.sha256 ?? null;
       if (latest !== baseline) {
-        setPoolError({
-          message: "The pool changed since this screen loaded. The save was not written; the screen is showing the saved pool.",
-          cas: true,
-        });
+        // Same as a server CAS refusal (§7.4.C): keep the draft, write
+        // nothing, and let Reload (with its dirty-draft confirmation) fetch it.
+        const message = "The pool changed since this screen loaded; Reload to fetch the new version.";
+        update({ lastError: message }, target);
+        setPoolError({ message, cas: true });
         setPoolSaved(false);
-        setPoolDefaultsDraft(false);
-        setPoolDefaultsConfirm(false);
-        setPoolDirty(false);
-        setPoolData(current => ({
-          schemaVersion: 1,
-          pool: fresh.pool,
-          sha256: fresh.sha256,
-          error: fresh.error,
-          legacy: fresh.legacy ?? current?.legacy ?? null,
-          legacyError: fresh.legacyError ?? current?.legacyError ?? null,
-        }));
         return;
       }
-      await callSetPeerPool({
+      const saved = await callSetPeerPool({
         schemaVersion: 1,
         target,
         pool: draft,
         expectedSha256: latest,
       });
       if (!ticket.isCurrent()) return;
-      const reread = await callGetPeerPool({ schemaVersion: 1, target });
+      // The write is committed: a retry must not see it as a foreign change.
+      baselineSha.current = saved.sha256;
+      // A failed read-back falls back to the write result, never to the
+      // pre-write baseline.
+      const reread: Partial<GetPeerPoolResult> & Pick<GetPeerPoolResult, "pool" | "sha256"> =
+        await callGetPeerPool({ schemaVersion: 1, target }).catch(() => saved);
       if (!ticket.isCurrent()) return;
       setPoolData(current => ({
         schemaVersion: 1,
         pool: reread.pool,
         sha256: reread.sha256,
-        error: reread.error,
+        error: reread.error ?? null,
         legacy: reread.legacy ?? current?.legacy ?? null,
         legacyError: reread.legacyError ?? current?.legacyError ?? null,
       }));

@@ -122,15 +122,15 @@ export function PresetPoolCard({ colors, pool, availableFamilies, catalogs, retr
             {seat.allowedEfforts?.length === 0 ? <Text accessibilityLiveRegion="polite" style={[styles.mutedSmall, { color: colors.statusWarning }]}>Choose at least one effort, or select All supported efforts.</Text> : null}
           </View> : null}
           <View style={[styles.field, { paddingTop: 12, borderTopWidth: 1, borderColor: colors.border }]}>
-          {!catalog || catalog.error != null ? <View style={styles.field}>
+          {!catalog ? <View style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>Permission mode</Text>
             <Text style={{ color: colors.foreground }}>{seat.modeId ? `${seat.modeId} (stored)` : 'No stored mode'}</Text>
-            </View> : catalog.modes.length ? <View style={styles.field}>
+            </View> : catalog.error == null && catalog.modes.length ? <View style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>Permission mode</Text>
             <ChipSelect colors={colors} value={seat.modeId} options={[{ label: 'Use default', value: '' }, ...catalog.modes.map(m => ({ value: m.id, label: m.label })),
             ...(seat.modeId && !catalog.modes.some(m => m.id === seat.modeId) ? [{ label: `${seat.modeId} (stored)`, value: seat.modeId }] : [])]} onChange={pool.setSeatField(index, 'modeId')} disabled={disabled} />
             </View> : <Field colors={colors} label="Permission mode ID" value={seat.modeId} onChangeText={pool.setSeatField(index, 'modeId')} disabled={disabled} />}
-          {!seat.modeId ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{catalog?.modes.length ? 'This provider advertises permission modes. Choose one before saving; Use default is not a resolved mode.' : 'Uses the workspace mode when configured. Choose a mode explicitly if your workspace has no default.'}</Text> : null}
+          {!seat.modeId ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{catalog?.error == null && catalog?.modes.length ? 'This provider advertises permission modes. Choose one before saving; Use default is not a resolved mode.' : 'Uses the workspace mode when configured. Choose a mode explicitly if your workspace has no default.'}</Text> : null}
           {features.defs.length ? features.defs.map(def => def.type === 'toggle' ? <SwitchRow key={def.id} colors={colors} title={def.label}
             checked={(seat.feature[def.id] ?? '') === '' ? def.value : seat.feature[def.id] === 'true'} onToggle={value => pool.setSeatFeature(index, def.id)(String(value))} disabled={disabled} />
             : <View key={def.id} style={styles.field}><Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>{def.label}</Text><ChipSelect colors={colors} value={seat.feature[def.id] ?? ''}

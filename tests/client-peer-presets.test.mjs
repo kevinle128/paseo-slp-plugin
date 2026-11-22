@@ -263,7 +263,7 @@ test('a stored Cursor mode stays visible and unchanged while its catalog is not 
  assert.equal(f.write.calls.length,0);
 });
 
-test('Save does not overwrite a pool that changed since load, and shows the saved pool',async t=>{
+test('Save does not overwrite a pool that changed since load, and keeps the draft',async t=>{
  const f=await setup(t,effortPool());
  await act(async()=>f.state.pool.updatePool(form=>({...form,policy:'Draft from the open screen'})));
  await f.press('Save pool');
@@ -274,8 +274,25 @@ test('Save does not overwrite a pool that changed since load, and shows the save
  await act(async()=>f.read.calls.at(-1).resolve({schemaVersion:1,pool:moved,sha256:movedSha,error:null,legacy:null,legacyError:null}));
  assert.equal(f.write.calls.length,0);
  assert.equal(f.state.pool.poolError.cas,true);
- assert.match(f.state.pool.poolError.message,/not written/);
- assert.equal(f.state.pool.poolForm.policy,moved.policy);
- assert.equal(f.state.pool.poolForm.seats[0].modeId,'agent');
- assert.equal(f.state.pool.poolData.sha256,movedSha);
+ assert.match(f.state.pool.poolError.message,/Reload/);
+ assert.equal(f.state.pool.poolDirty,true);
+ assert.equal(f.state.pool.poolForm.policy,'Draft from the open screen');
+ assert.equal(f.state.pool.poolData.sha256,SHA);
+});
+
+test('a failed read-back after a committed save keeps the written sha as the baseline',async t=>{
+ const f=await setup(t,effortPool());
+ await act(async()=>f.state.pool.updatePool(form=>({...form,policy:'Saved draft'})));
+ await f.press('Save pool');await acceptSaveRead(f);
+ const written={...f.write.calls[0].input.pool};
+ const writtenSha='d'.repeat(64);
+ await act(async()=>f.write.calls[0].resolve({schemaVersion:1,pool:written,sha256:writtenSha}));
+ await act(async()=>f.read.calls.at(-1).reject(new Error('transient read failure')));
+ assert.equal(f.state.pool.poolSaved,true);
+ assert.equal(f.state.pool.poolData.sha256,writtenSha);
+ await act(async()=>f.state.pool.updatePool(form=>({...form,policy:'Second edit'})));
+ await f.press('Save pool');
+ await act(async()=>f.read.calls.at(-1).resolve({schemaVersion:1,pool:written,sha256:writtenSha,error:null,legacy:null,legacyError:null}));
+ assert.equal(f.write.calls.length,2);
+ assert.equal(f.write.calls[1].input.expectedSha256,writtenSha);
 });

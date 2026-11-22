@@ -819,12 +819,10 @@ export function buildPeerSeat(
   option.model = form.model.trim();
   option.enabled = form.enabled;
   option.availability = form.preset ? stored?.availability ?? "ready" : "ready";
-  // No catalog answer yet: an empty form mode is not a choice to delete the
-  // saved one, but only for the same provider. Unset or a different provider
-  // must not inherit the previous mode.
-  const storedMode = typeof stored?.modeId === "string" ? stored.modeId.trim() : "";
-  const sameProvider = form.family !== "" && stored?.provider === form.family;
-  const modeId = form.modeId.trim() || (advertisedModes === undefined && sameProvider ? storedMode : "");
+  // Save writes the displayed mode only. peerSeatForm and applyFamilyChange
+  // already keep a stored mode while its catalog is not loaded, so an empty
+  // form mode here is the Human's choice (or a provider change).
+  const modeId = form.modeId.trim();
   if (modeId) option.modeId = modeId;
   else delete option.modeId;
   const thinkingOptionId = form.thinkingOptionId.trim();

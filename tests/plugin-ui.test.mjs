@@ -939,7 +939,19 @@ test('a stored mode survives form build and save while the provider catalog is n
     () => undefined,
   );
   assert.ok('pool' in wiped, wiped.error);
-  assert.equal(wiped.pool.options[0].modeId, 'agent', 'an empty form mode is not a delete while the catalog is unloaded');
+  assert.equal(wiped.pool.options[0].modeId, undefined, 'Save writes the displayed (cleared) mode even while the catalog is unloaded');
+  const away = applyFamilyChange(form.seats[0], 'codex', undefined);
+  const back = applyFamilyChange({ ...form.seats[0], ...away }, 'cursor', undefined);
+  assert.equal(back.modeId, '');
+  const roundTripped = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], ...back, enabled: false }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in roundTripped, roundTripped.error);
+  assert.equal(roundTripped.pool.options[0].modeId, undefined, 'a provider round-trip does not resurrect the stored mode');
   const switched = applyFamilyChange(form.seats[0], 'codex', undefined);
   assert.equal(switched.model, '');
   assert.equal(switched.modeId, '');

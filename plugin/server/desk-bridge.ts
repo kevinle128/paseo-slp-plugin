@@ -2348,7 +2348,7 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
     // (or any other refusal) still returns undefined.
     await Promise.race([ready, sleep(LEDGER_LIMITS.lockWaitMs)]);
     if (!stopped && bindingGap(state)) {
-      await start();
+      await Promise.race([start(), sleep(LEDGER_LIMITS.lockWaitMs)]);
     }
     if (state.kind !== "listening") {
       warn("graft-unavailable", "slp: desk bridge is not listening — seat mints keep env handle only");
