@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync,readFileSync,readdirSync,realpathSync,rmSync,writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { lstatSync,mkdirSync,readFileSync,readdirSync,realpathSync,rmSync,symlinkSync,writeFileSync } from 'node:fs';
+import { join,resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DeskSeatCreateInput } from '../plugin/shared/delegation.ts';
 import { createDeskOperations } from '../plugin/server/desk-operation.ts';
 import { createFormationPlanner } from '../plugin/server/desk-formation.ts';
+import { createFormationPlacement } from '../plugin/server/desk-placement.ts';
 import { placementFixture,fixtureGit,committedRepository } from './helpers/formation-placement-fixture.mjs';
 import { createTaskGitIo } from '../plugin/server/desk-task-execution-host.ts';
 
@@ -536,4 +537,225 @@ for(const stage of ['before create','after create'])test('cross-repository nesti
  if(stage==='after create'){assert.equal(out.result.agentId,'child');assert.equal(out.result.sent,false);}
  const calls=f.hostCalls.length,replay=await f.run({...f.input,placement:crossPlacement(f,'id')});
  assert.equal(replay.receiptSha256,out.receiptSha256);assert.equal(f.hostCalls.length,calls);
+});
+
+function addRegisteredSubmodule(f,name='sub',opts={}){
+ const upstream=join(f.dir,'upstream-'+name.replace(/\//g,'-'));
+ committedRepository(upstream);
+ if(opts.protocol!==false){
+  mkdirSync(join(upstream,'.paseo-slp'),{recursive:true});
+  writeFileSync(join(upstream,'.paseo-slp/workspace-protocol.md'),'---\nagent_mode: full-access\n---\nSubmodule protocol.\n');
+  fixtureGit(upstream,'add','.paseo-slp/workspace-protocol.md');
+  fixtureGit(upstream,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','submodule protocol');
+ }
+ fixtureGit(f.repository,'-c','protocol.file.allow=always','submodule','add','--quiet',upstream,name);
+ fixtureGit(f.repository,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','register submodule '+name);
+ const subDir=realpathSync(join(f.repository,name));
+ const subCommonDir=realpathSync(join(f.commonDir,'modules',name));
+ const subMembers=[];
+ const origRead=f.deps.readMemberships;
+ f.deps.readMemberships=gitCommonDir=>gitCommonDir===subCommonDir?subMembers:origRead(gitCommonDir);
+ const origCreate=f.workspaceApi.workspaces.ref;
+ const wrapRef=id=>{
+  const h=origCreate(id);
+  return {...h,agents:{create:async options=>{
+   const res=await h.agents.create(options);
+   const snap=f.snapshots.get(res.id);
+   if(snap&&realpathSync(resolve(snap.cwd,fixtureGit(snap.cwd,'rev-parse','--git-common-dir')))===subCommonDir){
+    // Move fixture registration from caller ledger to submodule ledger.
+    const idx=f.members.findIndex(m=>m.agentId===res.id);
+    if(idx>=0)subMembers.push(...f.members.splice(idx,1));
+   }
+   return res;
+  }}};
+ };
+ f.workspaceApi.workspaces.ref=wrapRef;
+ f.workspaceApi.workspaces.open=async input=>{
+  f.hostCalls.push({kind:'open',input});
+  f.workspaces.set('opened',{id:'opened',workspaceDirectory:input.cwd,status:'done',archivingAt:null});
+  return wrapRef('opened');
+ };
+ f.workspaces.set('sub',{id:'sub',workspaceDirectory:subDir,status:'done',archivingAt:null});
+ return {upstream,subDir,subCommonDir,subMembers};
+}
+
+for(const by of ['id','cwd','id+cwd'])test('Supervisor forms a Lead in a registered submodule by '+by+' with submodule desk membership and pins',async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ const {subDir,subCommonDir,subMembers}=addRegisteredSubmodule(f);
+ const placement=by==='id'?{kind:'existing',workspaceId:'sub',reason:'submodule lead'}
+  :by==='cwd'?{kind:'existing',cwd:subDir,reason:'submodule lead'}
+  :{kind:'existing',workspaceId:'sub',cwd:subDir,reason:'submodule lead'};
+ const out=await f.run({...f.input,placement});
+ assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));
+ assert.equal(out.result.workspaceId,by==='cwd'?'opened':'sub');
+ assert.equal(f.snapshots.get('child').cwd,subDir);
+ const observed=out.phases.find(p=>p.name==='target-observed').value;
+ assert.equal(observed.cwd,subDir);assert.equal(observed.gitCommonDir,subCommonDir);
+ assert.equal(observed.source.repository,subDir);assert.equal(observed.source.gitCommonDir,subCommonDir);
+ assert.notEqual(observed.source.configuration['workspace-protocol.md'],null);
+ assert.equal(f.members.length,0);assert.equal(subMembers.length,1);
+ const prompt=out.result.delivery.prompt;
+ assert.ok(prompt.includes('Repository: '+subDir));
+ assert.ok(prompt.includes('Use '+subDir+'/.paseo-slp/workspace-protocol.md'));
+ assert.equal(prompt.includes(f.repository+'/.paseo-slp'),false);
+ const calls=f.hostCalls.length,replay=await f.run({...f.input,placement});
+ assert.equal(replay.receiptSha256,out.receiptSha256);assert.equal(f.hostCalls.length,calls);
+});
+
+test('Supervisor forms a Lead in a registered submodule without .paseo-slp configuration',async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ const {subDir,subCommonDir,subMembers}=addRegisteredSubmodule(f,'plain-sub',{protocol:false});
+ const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'sub',reason:'plain submodule'}});
+ assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));
+ const observed=out.phases.find(p=>p.name==='target-observed').value;
+ assert.equal(observed.cwd,subDir);assert.equal(observed.gitCommonDir,subCommonDir);
+ assert.equal(observed.source.repository,subDir);
+ assert.equal(observed.source.configuration['workspace-protocol.md'],null);
+ assert.equal(f.members.length,0);assert.equal(subMembers.length,1);
+});
+
+for(const by of ['id','cwd'])test('Supervisor forms a Lead in a linked worktree of a registered submodule by '+by,async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ const {subDir,subCommonDir,subMembers}=addRegisteredSubmodule(f);
+ const wt=join(f.dir,'sub-wt');
+ fixtureGit(subDir,'worktree','add','--detach',wt,'HEAD');
+ const wtDir=realpathSync(wt);
+ // Remove .paseo-slp from linked worktree to verify inheritance from submodule main checkout.
+ rmSync(join(wtDir,'.paseo-slp'),{recursive:true,force:true});
+ f.workspaces.set('sub-wt',{id:'sub-wt',workspaceDirectory:wtDir,status:'done',archivingAt:null});
+ const placement=by==='id'?{kind:'existing',workspaceId:'sub-wt',reason:'submodule worktree'}
+  :{kind:'existing',cwd:wtDir,reason:'submodule worktree'};
+ const out=await f.run({...f.input,placement});
+ assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));
+ const observed=out.phases.find(p=>p.name==='target-observed').value;
+ assert.equal(observed.cwd,wtDir);assert.equal(observed.gitCommonDir,subCommonDir);
+ assert.equal(observed.source.repository,subDir);
+ assert.notEqual(observed.source.configuration['workspace-protocol.md'],null);
+ assert.ok(out.result.delivery.prompt.includes('Use '+subDir+'/.paseo-slp/workspace-protocol.md'));
+ assert.equal(f.members.length,0);assert.equal(subMembers.length,1);
+});
+
+for(const [callerRole,role] of [['lead','lead'],['supervisor','peer'],['lead','peer']])
+ test('registered submodule rejects '+callerRole+' → '+role+' before native allocation',async t=>{
+  const f=placementFixture(t,{role,callerRole});
+  addRegisteredSubmodule(f);
+  const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'sub',reason:'disallowed role'}});
+  assert.equal(out.result.code,'CAPABILITY_GAP',JSON.stringify(out));
+  assert.match(out.result.message,/different Git repository/);
+  assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+ });
+
+test('Supervisor inside a submodule cannot place a Lead into the parent superproject',async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ const {subDir,subCommonDir}=addRegisteredSubmodule(f);
+ const subPlacement=createFormationPlacement({repo:{gitCommonDir:subCommonDir},host:()=>f.workspaceApi});
+ f.deps.placement=subPlacement;
+ f.row.createCwd=subDir;f.row.workspaceId='sub';
+ const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'caller',reason:'upward to parent'}});
+ assert.equal(out.result.code,'CAPABILITY_GAP',JSON.stringify(out));
+ assert.match(out.result.message,/nested/);
+ assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+});
+
+const spoofedSubmodules={
+ 'fake .git directory at registered submodule path':(f,{subDir})=>{
+  rmSync(subDir,{recursive:true,force:true});
+  committedRepository(subDir);
+  return subDir;
+ },
+ 'hijacked .git file pointing to foreign repository':(f,{subDir})=>{
+  rmSync(join(subDir,'.git'),{force:true});
+  writeFileSync(join(subDir,'.git'),'gitdir: '+f.foreignCommonDir+'\n');
+  return subDir;
+ },
+ 'submodule removed from working tree .gitmodules':(f,{subDir})=>{
+  writeFileSync(join(f.repository,'.gitmodules'),'');
+  return subDir;
+ },
+ 'submodule removed from index (git rm --cached)':(f,{subDir})=>{
+  fixtureGit(f.repository,'rm','--cached','sub');
+  return subDir;
+ },
+ 'symlink .gitmodules in superproject':(f,{subDir})=>{
+  const realMod=join(f.dir,'ext-gitmodules');
+  writeFileSync(realMod,readFileSync(join(f.repository,'.gitmodules'),'utf8'));
+  rmSync(join(f.repository,'.gitmodules'),{force:true});
+  symlinkSync(realMod,join(f.repository,'.gitmodules'));
+  return subDir;
+ },
+ 'symlink replacing submodule directory':(f,{subDir})=>{
+  const alt=join(f.repository,'alt-inner');
+  committedRepository(alt);
+  rmSync(subDir,{recursive:true,force:true});
+  symlinkSync(alt,subDir);
+  return realpathSync(alt);
+ },
+ 'uncommitted gitlink only in index and working tree .gitmodules':f=>{
+  const fake=join(f.repository,'uncommitted-sub');
+  committedRepository(fake);
+  const oid=fixtureGit(fake,'rev-parse','HEAD');
+  fixtureGit(f.repository,'update-index','--add','--cacheinfo','160000,'+oid+',uncommitted-sub');
+  writeFileSync(join(f.repository,'.gitmodules'),'[submodule "uncommitted-sub"]\n\tpath = uncommitted-sub\n\turl = '+fake+'\n');
+  return realpathSync(fake);
+ },
+};
+for(const [attack,setup] of Object.entries(spoofedSubmodules)){
+ test('Supervisor Lead rejects spoofed submodule: '+attack,async t=>{
+  const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+  const sub=addRegisteredSubmodule(f);
+  const targetDir=setup(f,sub);
+  assert.ok(lstatSync(targetDir));
+  f.workspaces.set('spoof',{id:'spoof',workspaceDirectory:targetDir,status:'done',archivingAt:null});
+  const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'spoof',reason:'spoof'}});
+  assert.equal(out.result.code,'CAPABILITY_GAP',JSON.stringify(out));
+  assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+ });
+}
+
+for(const stage of ['before create','after create'])test('submodule deregistration drift '+stage+' blocks dependent effects',async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ addRegisteredSubmodule(f);
+ let drifted=false;
+ const deregister=()=>{if(drifted)return;drifted=true;writeFileSync(join(f.repository,'.gitmodules'),'');};
+ if(stage==='before create')f.setProviderHook(deregister);else f.setAfterCreate(deregister);
+ const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'sub',reason:'submodule drift'}});
+ assert.ok(out.phases.some(p=>p.name==='target-observed'));assert.equal(drifted,true);
+ assert.equal(out.result.code,'ROUTE_DRIFT',JSON.stringify(out));assert.match(out.result.message,/nested/);
+ assert.equal(Object.hasOwn(out.result,'delivery'),false);assert.equal(f.hostCalls.some(c=>c.kind==='send'),false);
+ assert.equal(f.hostCalls.filter(c=>c.kind==='create').length,stage==='before create'?0:1);
+});
+
+test('submodule registration probe errors fail closed with CAPABILITY_GAP',async t=>{
+ const real=createTaskGitIo();
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor',git:{...real,lsTree:async()=>{throw new Error('git ls-tree failure');}}});
+ addRegisteredSubmodule(f);
+ const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'sub',reason:'probe error'}});
+ assert.equal(out.result.code,'CAPABILITY_GAP',JSON.stringify(out));
+ assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+});
+
+test('Lead placed in a registered submodule forms a Peer in the submodule workspace on the submodule desk',async t=>{
+ const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
+ const {subDir,subCommonDir,subMembers}=addRegisteredSubmodule(f);
+ writeFileSync(join(subDir,'.paseo-slp/slp-routing.json'),JSON.stringify({...f.catalog,options:[{...f.options[0],id:'sub-peer'}]}));
+ const leadOut=await f.run({...f.input,requestId:'hop1-sub-lead',placement:{kind:'existing',workspaceId:'sub',reason:'submodule lead'}});
+ assert.equal(leadOut.result.state,'awaiting-caller-delivery',JSON.stringify(leadOut));
+ assert.equal(subMembers.length,1);
+ // Hop 2: the Lead operates on the submodule's own desk and forms a Peer in a linked worktree of the submodule.
+ const subWt=join(f.dir,'sub-peer-wt');
+ fixtureGit(subDir,'worktree','add','--detach',subWt,'HEAD');
+ const subWtDir=realpathSync(subWt);
+ rmSync(join(subWtDir,'.paseo-slp'),{recursive:true,force:true});
+ f.workspaces.set('sub-peer-wt',{id:'sub-peer-wt',workspaceDirectory:subWtDir,status:'done',archivingAt:null});
+ const subPlacement=createFormationPlacement({repo:{gitCommonDir:subCommonDir},host:()=>f.workspaceApi});
+ f.deps.placement=subPlacement;
+ f.deps.repoKey='sub-repo';
+ f.row.agentId=leadOut.result.agentId;f.row.role='lead';f.row.createCwd=subDir;f.row.workspaceId='sub';
+ const peerOut=await f.run({...f.input,requestId:'hop2-sub-peer',role:'peer',placement:{kind:'existing',workspaceId:'sub-peer-wt',reason:'submodule peer lane'}});
+ assert.equal(peerOut.result.state,'awaiting-caller-delivery',JSON.stringify(peerOut));
+ const observed=peerOut.phases.find(p=>p.name==='target-observed').value;
+ assert.equal(observed.cwd,subWtDir);assert.equal(observed.gitCommonDir,subCommonDir);
+ assert.equal(observed.source.repository,subDir);
+ assert.equal(peerOut.phases.find(p=>p.name==='route-selected').value.route.optionId,'sub-peer');
+ assert.equal(subMembers.length,2);
 });
