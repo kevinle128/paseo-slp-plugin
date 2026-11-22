@@ -122,7 +122,10 @@ export function PresetPoolCard({ colors, pool, availableFamilies, catalogs, retr
             {seat.allowedEfforts?.length === 0 ? <Text accessibilityLiveRegion="polite" style={[styles.mutedSmall, { color: colors.statusWarning }]}>Choose at least one effort, or select All supported efforts.</Text> : null}
           </View> : null}
           <View style={[styles.field, { paddingTop: 12, borderTopWidth: 1, borderColor: colors.border }]}>
-          {catalog?.modes.length ? <View style={styles.field}>
+          {!catalog || catalog.error != null ? <View style={styles.field}>
+            <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>Permission mode</Text>
+            <Text style={{ color: colors.foreground }}>{seat.modeId ? `${seat.modeId} (stored)` : 'No stored mode'}</Text>
+            </View> : catalog.modes.length ? <View style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>Permission mode</Text>
             <ChipSelect colors={colors} value={seat.modeId} options={[{ label: 'Use default', value: '' }, ...catalog.modes.map(m => ({ value: m.id, label: m.label })),
             ...(seat.modeId && !catalog.modes.some(m => m.id === seat.modeId) ? [{ label: `${seat.modeId} (stored)`, value: seat.modeId }] : [])]} onChange={pool.setSeatField(index, 'modeId')} disabled={disabled} />

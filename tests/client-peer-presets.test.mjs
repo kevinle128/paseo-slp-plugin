@@ -248,6 +248,21 @@ test('Save refuses an enabled preset when the provider advertises permission mod
  assert.equal(f.state.pool.poolSaved,true);
 });
 
+test('a stored Cursor mode stays visible and unchanged while its catalog is not loaded',async t=>{
+ const seat=(id,displayName)=>({id,displayName,description:'Ordinary work',provider:'cursor',model:'composer',roles:['peer'],enabled:true,
+  availability:'ready',modeId:'agent',suitableFor:[],avoidFor:[],notes:'',runtimeRule:'none',effortPolicy:{kind:'select'},
+  modelProvider:'',selectionHints:'',templateOrigin:null});
+ const pool={version:2,policy:'Choose a mode',quotaFallback:{enabled:false,optionId:null},options:[seat('balanced','Balanced'),seat('fast','Fast')]};
+ const f=await setup(t,pool);
+ await act(async()=>f.state.pool.setOpenSeat(0));await pressText(f,'Additional settings');
+ assert.equal(f.state.pool.poolForm.seats[0].modeId,'agent');
+ assert.equal(f.state.pool.poolForm.seats[1].modeId,'agent');
+ assert.match(rendered(f),/agent \(stored\)/);
+ assert.doesNotMatch(rendered(f),/Use default/);
+ assert.equal(f.state.pool.poolDiffers,false);
+ assert.equal(f.write.calls.length,0);
+});
+
 test('Save does not overwrite a pool that changed since load, and shows the saved pool',async t=>{
  const f=await setup(t,effortPool());
  await act(async()=>f.state.pool.updatePool(form=>({...form,policy:'Draft from the open screen'})));

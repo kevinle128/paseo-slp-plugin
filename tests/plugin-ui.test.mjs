@@ -574,16 +574,20 @@ test('applyFamilyChange resets dependents against the new family catalog', () =>
   assert.equal(toPi.model, 'pi-model');
   assert.equal(toPi.modeId, '');
 
-  // Catalog not loaded (undefined) or errored (empty lists) → nothing keeps.
-  const notLoaded = applyFamilyChange(form({ model: 'pi-model' }), 'pi', undefined);
-  assert.equal(notLoaded.model, '');
+  // An unloaded or errored catalog has not answered, so stored model and mode
+  // stay. Feature values still clear: this function is an explicit family switch.
+  const notLoaded = applyFamilyChange(form({ model: 'pi-model', modeId: 'bypass' }), 'pi', undefined);
+  assert.equal(notLoaded.model, 'pi-model');
+  assert.equal(notLoaded.modeId, 'bypass');
+  assert.equal(notLoaded.features, '');
   const errored = applyFamilyChange(
     form(),
     'codex',
     catalogResult({ error: 'Catalog query failed' }),
   );
-  assert.equal(errored.model, '');
-  assert.equal(errored.modeId, '');
+  assert.equal(errored.model, 'swe-2-max');
+  assert.equal(errored.modeId, 'bypass');
+  assert.equal(errored.features, '');
 
   // Same-family re-pick keeps what the catalog declares — features still
   // clear (the rule is unconditional).
@@ -897,6 +901,36 @@ test('buildPeerPool refuses an enabled seat with no mode when the provider adver
   assert.equal(chosen.pool.options[0].modeId, 'agent');
   const unloaded = buildPeerPool(form, () => []);
   assert.ok('pool' in unloaded, `an unloaded catalog does not invent a mode requirement: ${unloaded.error}`);
+});
+
+test('a stored mode survives form build and save while the provider catalog is not loaded', () => {
+  const option = {
+    id: 'balanced', provider: 'cursor', roles: ['peer'], model: 'composer', enabled: true,
+    availability: 'ready', modeId: 'agent', suitableFor: [], avoidFor: [], notes: '',
+    displayName: 'Balanced', description: 'Ordinary work', runtimeRule: 'none',
+    effortPolicy: { kind: 'select' }, modelProvider: '', selectionHints: '', templateOrigin: null,
+  };
+  const pool = {
+    version: 2, policy: 'Choose a mode', quotaFallback: { enabled: false, optionId: null }, options: [option],
+  };
+  const form = peerPoolForm(pool);
+  assert.equal(form.seats[0].modeId, 'agent', 'building the form with no catalog keeps the stored mode');
+  const kept = applyFamilyChange(form.seats[0], 'cursor', undefined);
+  assert.equal(kept.modeId, 'agent');
+  assert.equal(kept.model, 'composer');
+  const roundTrip = buildPeerPool(form, () => [], new Map([[option.id, option]]), pool, () => undefined);
+  assert.ok('pool' in roundTrip, roundTrip.error);
+  assert.equal(roundTrip.pool.options[0].modeId, 'agent');
+  assert.deepEqual(roundTrip.pool, pool);
+  const wiped = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], modeId: '' }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in wiped, wiped.error);
+  assert.equal(wiped.pool.options[0].modeId, 'agent', 'an empty form mode is not a delete while the catalog is unloaded');
 });
 
 test('draft uids are fresh per seat, ignored by form equality, and copied fresh', () => {

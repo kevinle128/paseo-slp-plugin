@@ -212,7 +212,13 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
     seat => featureDefsForSeat(seat).defs,
     storedSeatOptions,
     poolData?.pool,
-    seat => seat.family !== "" ? catalogs[catalogScope(seat.family, "peer")]?.modes : undefined,
+    seat => {
+      if (seat.family === "") return undefined;
+      const catalog = catalogs[catalogScope(seat.family, "peer")];
+      // Undefined or errored is "not loaded", not "this provider lists no modes".
+      if (catalog === undefined || catalog.error != null) return undefined;
+      return catalog.modes;
+    },
   );
   const poolDiffers = peerPoolDiffers(poolBuild, poolData?.pool ?? null);
   // §7.4.E — the editor stays locked until the first successful snapshot:
