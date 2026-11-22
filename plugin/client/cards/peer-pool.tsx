@@ -139,6 +139,10 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
   const lookupRefs = useRef(new Map<number, View | null>());
   const definitionRefs = useRef(new Map<number, View | null>());
   const keepEditsRef = useRef<View | null>(null);
+  // Sha of the read the current draft was filled from. A later snapshot must
+  // not authorize a save of this draft: Save re-reads and refuses when the
+  // file's sha has moved.
+  const baselineSha = useRef<string | null>(null);
 
   // Pool state is keyed to the displayed target: switching daemon homes
   // drops the previous pool, its draft and every transient flag. Without
@@ -175,6 +179,7 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
   // error line names what the file held).
   useEffect(() => {
     if (poolDirty) return;
+    baselineSha.current = poolData?.sha256 ?? null;
     const next = poolData?.pool ? peerPoolForm(poolData.pool) : poolData && !poolData.error ? freshPresetPoolForm() : emptyPeerPoolForm();
     setPoolForm(current => (samePeerPoolForm(current, next) ? current : next));
   }, [poolData, poolDirty]);
@@ -207,6 +212,7 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
     seat => featureDefsForSeat(seat).defs,
     storedSeatOptions,
     poolData?.pool,
+    seat => seat.family !== "" ? catalogs[catalogScope(seat.family, "peer")]?.modes : undefined,
   );
   const poolDiffers = peerPoolDiffers(poolBuild, poolData?.pool ?? null);
   // §7.4.E — the editor stays locked until the first successful snapshot:
@@ -393,10 +399,12 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
   const setFallbackId = (seatId: string) =>
     updatePool(form => ({ ...form, quotaFallbackId: seatId }));
 
-  // Save dispatches the same poolBuild the gate compared — whole-file write
-  // guarded by the sha256 get-peer-pool returned. A build error is surfaced
-  // AND opens the offending seat's editor; a CAS refusal lands in the card's
-  // notice area (§7.4.D) with a Reload affordance instead of only lastError.
+  // Save dispatches the same poolBuild the gate compared. It re-reads first
+  // and writes only when that sha is still the draft's baseline; a moved
+  // file is shown and not overwritten. The screen then reads again and
+  // displays the stored pool, not the request echo. A build error is
+  // surfaced AND opens the offending seat's editor; a CAS refusal lands in
+  // the card's notice area (§7.4.D) with a Reload affordance.
   const savePeerPool = async () => {
     if (metadataPending || !snapshot.fresh || !target || !targetKey) return;
     if ("error" in poolBuild) {
@@ -405,23 +413,48 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
       return;
     }
     const ticket = capture();
+    const baseline = baselineSha.current;
+    const draft = poolBuild.pool;
     setPoolSaving(true);
     try {
-      const result = await callSetPeerPool({
+      const fresh = await callGetPeerPool({ schemaVersion: 1, target });
+      if (!ticket.isCurrent()) return;
+      const latest = fresh.sha256 ?? null;
+      if (latest !== baseline) {
+        setPoolError({
+          message: "The pool changed since this screen loaded. The save was not written; the screen is showing the saved pool.",
+          cas: true,
+        });
+        setPoolSaved(false);
+        setPoolDefaultsDraft(false);
+        setPoolDefaultsConfirm(false);
+        setPoolDirty(false);
+        setPoolData(current => ({
+          schemaVersion: 1,
+          pool: fresh.pool,
+          sha256: fresh.sha256,
+          error: fresh.error,
+          legacy: fresh.legacy ?? current?.legacy ?? null,
+          legacyError: fresh.legacyError ?? current?.legacyError ?? null,
+        }));
+        return;
+      }
+      await callSetPeerPool({
         schemaVersion: 1,
         target,
-        pool: poolBuild.pool,
-        expectedSha256: poolData?.sha256 ?? null,
+        pool: draft,
+        expectedSha256: latest,
       });
-      // A save issued for home A must never land on home B's view.
+      if (!ticket.isCurrent()) return;
+      const reread = await callGetPeerPool({ schemaVersion: 1, target });
       if (!ticket.isCurrent()) return;
       setPoolData(current => ({
         schemaVersion: 1,
-        pool: result.pool,
-        sha256: result.sha256,
-        error: null,
-        legacy: current?.legacy ?? null,
-        legacyError: current?.legacyError ?? null,
+        pool: reread.pool,
+        sha256: reread.sha256,
+        error: reread.error,
+        legacy: reread.legacy ?? current?.legacy ?? null,
+        legacyError: reread.legacyError ?? current?.legacyError ?? null,
       }));
       setPoolDirty(false);
       setPoolSaved(true);

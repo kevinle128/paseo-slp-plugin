@@ -30,6 +30,14 @@ async function setup(t,initial=null,catalogs={}) {
  const press=async label=>{const node=button(label);assert.ok(node,`button ${label}`);assert.ok(!node.props.disabled,`${label} enabled`);await act(async()=>node.props.onPress());};
  return {state,renderer,read,write,button,field,press,mod,update:async home=>{await act(async()=>renderer.update(React.createElement(Harness,{home})));}};
 }
+async function acceptSaveRead(f) {
+ const loaded=f.state.pool.poolData;
+ await act(async()=>f.read.calls.at(-1).resolve({schemaVersion:1,pool:loaded?.pool??null,sha256:loaded?.sha256??null,error:null,legacy:loaded?.legacy??null,legacyError:loaded?.legacyError??null}));
+}
+async function completeSave(f,pool,sha='b'.repeat(64)) {
+ await act(async()=>f.write.calls.at(-1).resolve({schemaVersion:1,pool,sha256:sha,error:null,legacy:null,legacyError:null}));
+ await act(async()=>f.read.calls.at(-1).resolve({schemaVersion:1,pool,sha256:sha,error:null,legacy:null,legacyError:null}));
+}
 
 const effortPool=allowed=>({version:2,policy:'Choose effort',quotaFallback:{enabled:false,optionId:null},options:[{
  id:'custom',displayName:'Custom',description:'General work',provider:'codex',model:'model',roles:['peer'],enabled:true,
@@ -49,9 +57,9 @@ test('allowed efforts use model labels and multi-select; empty selection blocks 
  assert.deepEqual(f.state.pool.poolBuild.pool.options[0].effortPolicy,{kind:'select',allowed:['low']});
  await toggleEffort(f,'Light');
  assert.match(rendered(f),/Choose at least one effort/);assert.equal(f.button('Save pool').props.disabled,true);
- await toggleEffort(f,'Thorough');await f.press('Save pool');
+ await toggleEffort(f,'Thorough');await f.press('Save pool');await acceptSaveRead(f);
  assert.deepEqual(f.write.calls[0].input.pool.options[0].effortPolicy,{kind:'select',allowed:['high']});
- await act(async()=>f.write.calls[0].resolve(result(f.write.calls[0].input.pool)));
+ await completeSave(f,f.write.calls[0].input.pool);
  await act(async()=>f.state.pool.setOpenSeat(0));
  if(!checkbox(f,'All supported efforts')) await pressText(f,'Additional settings');
  await toggleEffort(f,'All supported efforts');
@@ -86,10 +94,10 @@ test('real preset UI adds/edit custom entries and saves five defaults plus custo
  await act(async()=>{f.field('Preset name').props.onChangeText('Ý kiến riêng');f.field('When to use').props.onChangeText('Phản biện giả định bằng ví dụ.');});
  assert.equal(f.state.pool.poolBuild.pool.options[5].displayName,'Ý kiến riêng');
  assert.equal(f.state.pool.poolBuild.pool.options[5].description,'Phản biện giả định bằng ví dụ.');
- await f.press('Save pool');assert.equal(f.write.calls.length,1);
+ await f.press('Save pool');await acceptSaveRead(f);assert.equal(f.write.calls.length,1);
  const input=f.write.calls[0].input;assert.equal(input.pool.version,2);assert.equal(input.expectedSha256,null);
  assert.equal(input.pool.options.length,6);assert.equal(input.pool.options[5].enabled,false);
- await act(async()=>f.write.calls[0].resolve({...result(input.pool),sha256:SHA}));
+ await completeSave(f,input.pool,SHA);
  assert.equal(f.state.pool.poolSaved,true);assert.equal(f.state.pool.poolDirty,false);
 });
 
@@ -102,21 +110,23 @@ test('legacy UI stays v1 until explicit preview; backup/cancel/save preserve the
  await f.press('Copy original v1 backup');assert.deepEqual(JSON.parse(copied),old);
  await f.press('Cancel migration preview');assert.equal(f.state.pool.poolForm.version,undefined);assert.equal(f.state.pool.poolDirty,false);
  assert.equal(f.write.calls.length,0);
- await f.press('Preview preset migration');await f.press('Save conversion to v2');
+ await f.press('Preview preset migration');await f.press('Save conversion to v2');await acceptSaveRead(f);
  assert.equal(f.write.calls[0].input.expectedSha256,SHA);assert.equal(f.write.calls[0].input.pool.options[0].id,'old-custom');
  assert.equal(f.write.calls[0].input.pool.options[0].notes,'PRIVATE');
- await act(async()=>f.write.calls[0].resolve({...result(f.write.calls[0].input.pool),sha256:'b'.repeat(64)}));
+ await completeSave(f,f.write.calls[0].input.pool);
  assert.equal(f.state.pool.poolData.pool.version,2);
 });
 
 test('v2 preset save failure and stale completion preserve draft/target isolation',async t=>{
- const f=await setup(t);await f.press('Add preset');await f.press('Save pool');
+ const f=await setup(t);await f.press('Add preset');await f.press('Save pool');await acceptSaveRead(f);
  await act(async()=>f.write.calls[0].reject(new Error('peer pool changed since it was read')));
  assert.equal(f.state.pool.poolError.cas,true);assert.equal(f.state.pool.poolForm.seats.length,6);assert.equal(f.state.pool.poolSaved,false);
  await f.press('Save pool');await f.update('/b');
- await act(async()=>f.read.calls[1].resolve(result(null)));
+ await act(async()=>f.read.calls.at(-1).resolve(result(null)));
  assert.equal(f.state.pool.poolForm.seats.length,5);
- await act(async()=>f.write.calls[1].resolve({...result(f.write.calls[1].input.pool),sha256:SHA}));
+ const stale=f.read.calls[2];
+ await act(async()=>stale.resolve(result(null)));
+ assert.equal(f.write.calls.length,1);
  assert.equal(f.state.pool.poolForm.seats.length,5);assert.equal(f.state.pool.poolSaved,false);assert.equal(f.state.pool.poolError,null);
 });
 
@@ -154,14 +164,14 @@ test('default replacement saves only explicitly, preserves CAS failure, and reti
  await act(async()=>f.state.pool.setSeatFamily(0)('codex'));
  await act(async()=>f.state.pool.setSeatField(0,'model')('chosen-model'));
  await act(async()=>f.state.pool.setSeatEnabled(0)(true));
- await f.press('Save conversion to v2');
+ await f.press('Save conversion to v2');await acceptSaveRead(f);
  assert.equal(f.write.calls[0].input.expectedSha256,SHA);
  assert.equal(f.write.calls[0].input.pool.options[0].model,'chosen-model');
  await act(async()=>f.write.calls[0].reject(new Error('peer pool changed since it was read')));
  assert.equal(f.state.pool.poolError.cas,true);assert.equal(f.state.pool.poolDefaultsDraft,true);
  assert.match(rendered(f),/Legacy Peer pool — upgrade recommended/);
- await f.press('Save conversion to v2');
- await act(async()=>f.write.calls[1].resolve({...result(f.write.calls[1].input.pool),sha256:'b'.repeat(64)}));
+ await f.press('Save conversion to v2');await acceptSaveRead(f);
+ await completeSave(f,f.write.calls[1].input.pool);
  assert.equal(f.state.pool.poolDefaultsDraft,false);assert.equal(f.state.pool.poolDirty,false);
  assert.doesNotMatch(rendered(f),/Legacy Peer pool — upgrade recommended/);
 });
@@ -193,7 +203,7 @@ test('removing then adding a custom preset with the same ID does not inherit the
  assert.deepEqual(built.roles,['peer']);assert.equal(built.availability,'ready');assert.equal(built.extension,undefined);
  assert.equal(built.provider,'');assert.equal(built.model,'');assert.equal(built.notes,'');
  assert.equal(f.write.calls.length,0);
- await f.press('Save pool');assert.equal(f.write.calls[0].input.expectedSha256,SHA);
+ await f.press('Save pool');await acceptSaveRead(f);assert.equal(f.write.calls[0].input.expectedSha256,SHA);
  assert.equal(f.write.calls[0].input.pool.options[0].extension,undefined);
 });
 
@@ -214,4 +224,43 @@ test('replacement confirmations clear on edits, reload and target changes; faile
  await act(async()=>f.read.calls[3].resolve(result(oldPool())));
  assert.equal(f.state.pool.poolDefaultsConfirm,false);assert.equal(f.state.pool.poolDefaultsDraft,false);
  assert.equal(f.state.pool.poolForm.seats.length,1);assert.equal(f.write.calls.length,0);
+});
+
+const cursorSeat=()=>({version:2,policy:'Choose a mode',quotaFallback:{enabled:false,optionId:null},options:[{
+ id:'balanced',displayName:'Balanced',description:'Ordinary work',provider:'cursor',model:'composer',roles:['peer'],enabled:true,
+ availability:'ready',suitableFor:[],avoidFor:[],notes:'',runtimeRule:'none',effortPolicy:{kind:'select'}}]});
+const cursorCatalog={'cursor|peer':{models:[{id:'composer',label:'Composer',thinkingOptions:[]}],modes:[{id:'agent',label:'Agent'},{id:'plan',label:'Plan'}],features:[],error:null}};
+
+test('Save refuses an enabled preset when the provider advertises permission modes and none is chosen',async t=>{
+ const f=await setup(t,cursorSeat(),cursorCatalog);
+ await act(async()=>f.state.pool.setOpenSeat(0));await pressText(f,'Additional settings');
+ assert.match(rendered(f),/advertises permission modes/);
+ assert.equal(f.button('Save pool').props.disabled,true);
+ await act(async()=>f.state.pool.setSeatField(0,'modeId')('agent'));
+ assert.equal(f.button('Save pool').props.disabled,false);
+ await f.press('Save pool');await acceptSaveRead(f);
+ assert.equal(f.write.calls[0].input.pool.options[0].modeId,'agent');
+ assert.equal(f.write.calls[0].input.expectedSha256,SHA);
+ const stored={...f.write.calls[0].input.pool,options:[{...f.write.calls[0].input.pool.options[0]}]};
+ delete stored.options[0].modeId;
+ await completeSave(f,stored,SHA);
+ assert.equal(f.state.pool.poolForm.seats[0].modeId,'','the screen shows the pool read back after save');
+ assert.equal(f.state.pool.poolSaved,true);
+});
+
+test('Save does not overwrite a pool that changed since load, and shows the saved pool',async t=>{
+ const f=await setup(t,effortPool());
+ await act(async()=>f.state.pool.updatePool(form=>({...form,policy:'Draft from the open screen'})));
+ await f.press('Save pool');
+ const moved=effortPool();
+ moved.policy='Written while the screen stayed open';
+ moved.options[0]={...moved.options[0],modeId:'agent'};
+ const movedSha='c'.repeat(64);
+ await act(async()=>f.read.calls.at(-1).resolve({schemaVersion:1,pool:moved,sha256:movedSha,error:null,legacy:null,legacyError:null}));
+ assert.equal(f.write.calls.length,0);
+ assert.equal(f.state.pool.poolError.cas,true);
+ assert.match(f.state.pool.poolError.message,/not written/);
+ assert.equal(f.state.pool.poolForm.policy,moved.policy);
+ assert.equal(f.state.pool.poolForm.seats[0].modeId,'agent');
+ assert.equal(f.state.pool.poolData.sha256,movedSha);
 });

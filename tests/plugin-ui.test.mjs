@@ -882,6 +882,23 @@ test('buildPeerPool rejects the constraints validateCatalog enforces', () => {
   assert.ok(!('priority' in withPriority.option), 'priority must not survive a save');
 });
 
+test('buildPeerPool refuses an enabled seat with no mode when the provider advertises modes', () => {
+  const seat = {
+    id: 'balanced', family: 'cursor', model: 'composer', modeId: '', thinkingOptionId: '',
+    enabled: true, features: '', feature: {}, suitableFor: 'work', avoidFor: 'none', notes: 'n',
+  };
+  const form = { policy: 'p', seats: [seat], quotaFallbackEnabled: false, quotaFallbackId: '' };
+  const modes = [{ id: 'agent' }, { id: 'plan' }];
+  const refused = buildPeerPool(form, () => [], undefined, undefined, () => modes);
+  assert.match(refused.error, /advertises permission modes/);
+  const parked = buildPeerPool({ ...form, seats: [{ ...seat, enabled: false }] }, () => [], undefined, undefined, () => modes);
+  assert.ok('pool' in parked, `a disabled preset may omit a mode: ${parked.error}`);
+  const chosen = buildPeerPool({ ...form, seats: [{ ...seat, modeId: 'agent' }] }, () => [], undefined, undefined, () => modes);
+  assert.equal(chosen.pool.options[0].modeId, 'agent');
+  const unloaded = buildPeerPool(form, () => []);
+  assert.ok('pool' in unloaded, `an unloaded catalog does not invent a mode requirement: ${unloaded.error}`);
+});
+
 test('draft uids are fresh per seat, ignored by form equality, and copied fresh', () => {
   const form = peerPoolForm({
     version: 1, policy: 'p', quotaFallback: { enabled: false, optionId: null },

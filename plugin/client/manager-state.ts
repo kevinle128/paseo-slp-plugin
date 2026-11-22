@@ -779,6 +779,7 @@ export function buildPeerSeat(
   form: PeerSeatForm,
   stored: PeerPoolOptionValue | undefined,
   defs: CatalogResult["features"],
+  advertisedModes?: readonly { id: string }[],
 ): PeerSeatBuild {
   const id = form.id.trim();
   if (!PEER_SEAT_ID.test(id)) {
@@ -803,6 +804,12 @@ export function buildPeerSeat(
   }
   if (form.enabled && form.family === "") return { error: `${label}: an enabled seat needs a provider family` };
   if (form.enabled && form.model.trim() === "") return { error: `${label}: an enabled seat needs a model` };
+  // A provider that advertises permission modes has no safe implicit mode:
+  // seat creation refuses an unresolved mode, and picking one here could
+  // grant a different permission than the Human chose. Save must name the gap.
+  if (form.enabled && advertisedModes !== undefined && advertisedModes.length > 0 && form.modeId.trim() === "") {
+    return { error: `${label}: this provider advertises permission modes but the preset has no mode; choose a permission mode before saving` };
+  }
   const option: Record<string, unknown> = { ...(stored ?? {}) };
   if (!form.preset) delete option.priority;
   option.id = id;
@@ -868,6 +875,7 @@ export function buildPeerPool(
   defsFor: (seat: PeerSeatForm) => CatalogResult["features"],
   storedOptions?: ReadonlyMap<string, PeerPoolOptionValue>,
   storedPool?: PeerPoolValue | null,
+  modesFor?: (seat: PeerSeatForm) => readonly { id: string }[] | undefined,
 ): PeerPoolBuild {
   const policy = form.policy.trim();
   if (!policy) return { error: "pool policy is required" };
@@ -877,7 +885,7 @@ export function buildPeerPool(
     // Look the stored option up by the id the row had at load (storedId),
     // not the edited id — a rename/convert must keep passthrough fields the
     // form does not model (§7.4.D).
-    const built = buildPeerSeat(seat, storedOptions?.get(seat.storedId ?? seat.id.trim()), defsFor(seat));
+    const built = buildPeerSeat(seat, storedOptions?.get(seat.storedId ?? seat.id.trim()), defsFor(seat), modesFor?.(seat));
     if ("error" in built) return { error: built.error, seatIndex: index };
     if (ids.has(built.option.id)) return { error: `duplicate seat id "${built.option.id}"`, seatIndex: index };
     ids.add(built.option.id);
