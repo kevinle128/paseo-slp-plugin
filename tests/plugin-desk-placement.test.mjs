@@ -645,15 +645,20 @@ for(const [callerRole,role] of [['lead','lead'],['supervisor','peer'],['lead','p
   assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
  });
 
-test('Supervisor inside a submodule cannot place a Lead into the parent superproject',async t=>{
+for(const by of ['id','cwd'])test('Supervisor inside a submodule cannot place a Lead into the parent superproject by '+by,async t=>{
  const f=placementFixture(t,{role:'lead',callerRole:'supervisor'});
  const {subDir,subCommonDir}=addRegisteredSubmodule(f);
+ const parentDir=realpathSync(f.repository);
+ f.workspaces.set('parent-super',{id:'parent-super',workspaceDirectory:parentDir,status:'done',archivingAt:null});
  const subPlacement=createFormationPlacement({repo:{gitCommonDir:subCommonDir},host:()=>f.workspaceApi});
  f.deps.placement=subPlacement;
  f.row.createCwd=subDir;f.row.workspaceId='sub';
- const out=await f.run({...f.input,placement:{kind:'existing',workspaceId:'caller',reason:'upward to parent'}});
+ const placement=by==='id'?{kind:'existing',workspaceId:'parent-super',reason:'upward to parent'}
+  :{kind:'existing',cwd:parentDir,reason:'upward to parent'};
+ const out=await f.run({...f.input,placement});
  assert.equal(out.result.code,'CAPABILITY_GAP',JSON.stringify(out));
  assert.match(out.result.message,/nested/);
+ assert.equal(out.phases.length,0);
  assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
 });
 
