@@ -27,6 +27,7 @@ import { createStateStore } from '../plugin/server/state-store.ts';
 import {
   assertPersistedCompatible,
   applyProfilePrefs,
+  desiredProfiles,
   desiredProviderEntries,
   patchForDirection,
 } from '../plugin/server/config-transaction.ts';
@@ -75,6 +76,16 @@ test('explicit Antigravity family preference clears inherited effort but preserv
   assert.equal(applyProfilePrefs(live, { family: 'codex' }, 'supervisor').thinkingOptionId, 'high');
   assert.equal(applyProfilePrefs(live, { family: 'antigravity', thinkingOptionId: 'explicit-unsupported' }, 'supervisor').thinkingOptionId,
     'explicit-unsupported', 'explicit settings remain subject to adapter validation');
+});
+
+test('an empty featureValues map is not written, because Paseo 0.15+ does not persist it', () => {
+  const live = { id: 'slp-lead', name: 'SLP Lead', provider: 'slp-claude-lead', model: 'opus' };
+  const saved = applyProfilePrefs(live, { model: 'opus', featureValues: {} }, 'lead');
+  assert.equal(Object.hasOwn(saved, 'featureValues'), false);
+  assert.deepEqual(applyProfilePrefs(live, { featureValues: { fast: true } }, 'lead').featureValues, { fast: true });
+  const [, lead] = desiredProfiles('claude', { lead: { model: 'opus', featureValues: {} } });
+  assert.equal(Object.hasOwn(lead, 'featureValues'), false);
+  assert.equal(lead.model, 'opus');
 });
 
 test('0.14 host config keeps speech credentials, registries and idle cleanup through activation', async t => {
