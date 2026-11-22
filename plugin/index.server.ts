@@ -131,8 +131,9 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   // Desk MCP bridge (P2-d): the seat↔desk transport — one UDS adapter plus
   // lifecycle lock under the verified stable root, and the agent.create
   // graft that hands managed seats their stdio MCP server. start() is
-  // fire-and-forget: a failed lifecycle leaves the bridge "unavailable",
-  // never throws — graft/dispatch fail closed on their own. The before-hook
+  // fire-and-forget: a failed lifecycle leaves the bridge "unavailable"
+  // and never throws. A no-binding failure is retried once on the next
+  // managed seat create; every other gap stays fail-open. The before-hook
   // registrations land AFTER role-injection's below, on purpose.
   const deskBridge = createDeskBridge({
     journal,

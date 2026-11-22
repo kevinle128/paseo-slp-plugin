@@ -139,6 +139,92 @@ test('a binding-less home leaves the bridge inert (CAPABILITY_GAP)', async t => 
   assert.equal(f.bridge.state().code, 'CAPABILITY_GAP');
   assert.match(f.bridge.state().reason, /no active SLP binding/);
   assert.equal(existsSync(f.paths.socketPath), false);
+  assert.equal(f.warnings.filter(line => /stable-root resolution failed/.test(line)).length, 1);
+});
+
+test('a binding that appears after load restarts the bridge on the next slp seat graft', async t => {
+  // Plugin load with no receipt binding, then activation writes one. The
+  // next managed seat must receive slp_desk without a plugin reload.
+  let bound = false;
+  let reads = 0;
+  const f = bridgeFixture(t, {
+    journal: {
+      read: () => {
+        reads += 1;
+        return {
+          binding: bound ? {
+            launchSetSha256: f.launchSetSha,
+            runtimePath: f.runtimePath,
+            node: { path: process.execPath },
+            candidateSha256: f.candidateSha,
+          } : null,
+        };
+      },
+    },
+  });
+  t.after(() => f.bridge.stop());
+  void f.bridge.start();
+  assert.equal(await f.bridge.whenReady(), 'unavailable');
+  assert.match(f.bridge.state().reason, /stable-root resolution failed: no active SLP binding/);
+  assert.equal(f.warnings.filter(line => /stable-root resolution failed/.test(line)).length, 1);
+  assert.equal(existsSync(f.paths.socketPath), false);
+
+  // Still unbound: one restart attempt, then fail-open. Must not loop.
+  const early = await f.bridge.agentCreateGraft(createRequest());
+  assert.equal(early, undefined);
+  assert.equal(f.bridge.state().kind, 'unavailable');
+  assert.equal(reads, 2);
+  assert.equal(f.warnings.filter(line => /stable-root resolution failed/.test(line)).length, 1);
+  assert.ok(f.warnings.some(line => /not listening/.test(line)));
+
+  bound = true;
+  const [first, second] = await Promise.all([
+    f.bridge.agentCreateGraft(createRequest()),
+    f.bridge.agentCreateGraft(createRequest({ env: { SLP_DESK_HANDLE: 'other-handle' } })),
+  ]);
+  for (const out of [first, second]) {
+    assert.ok(out !== undefined);
+    const desk = out.config.mcpServers.slp_desk;
+    assert.equal(desk.type, 'stdio');
+    assert.equal(desk.command, process.execPath);
+    assert.deepEqual(desk.args, [f.paths.bridgePath]);
+    assert.equal(desk.env.SLP_DESK_SOCK, f.paths.socketPath);
+  }
+  assert.equal(first.config.mcpServers.slp_desk.env.SLP_DESK_HANDLE, 'minted-handle');
+  assert.equal(second.config.mcpServers.slp_desk.env.SLP_DESK_HANDLE, 'other-handle');
+  assert.equal(f.bridge.state().kind, 'listening');
+  assert.equal(JSON.parse(readFileSync(f.paths.lockPath, 'utf8')).pid, process.pid);
+  assert.equal(statSync(f.paths.socketPath).mode & 0o777, 0o600);
+  // The failed attempt plus one shared restart. A second graft must not
+  // open another lifecycle.
+  assert.equal(reads, 3);
+  assert.equal(f.warnings.filter(line => /stable-root resolution failed/.test(line)).length, 1);
+});
+
+test('a candidate-drift gap is not restarted from a later seat create', async t => {
+  let drift = true;
+  const f = bridgeFixture(t, {
+    journal: {
+      read: () => ({
+        binding: {
+          launchSetSha256: f.launchSetSha,
+          runtimePath: drift ? '/elsewhere/candidate' : f.runtimePath,
+          node: { path: process.execPath },
+          candidateSha256: f.candidateSha,
+        },
+      }),
+    },
+  });
+  t.after(() => f.bridge.stop());
+  void f.bridge.start();
+  assert.equal(await f.bridge.whenReady(), 'unavailable');
+  assert.equal(f.bridge.state().code, 'CANDIDATE_DRIFT');
+  drift = false;
+  const out = await f.bridge.agentCreateGraft(createRequest());
+  assert.equal(out, undefined);
+  assert.equal(f.bridge.state().kind, 'unavailable');
+  assert.equal(f.bridge.state().code, 'CANDIDATE_DRIFT');
+  assert.equal(existsSync(f.paths.socketPath), false);
 });
 
 test('a binding whose runtimePath diverges from the verified launch root is CANDIDATE_DRIFT', async t => {
