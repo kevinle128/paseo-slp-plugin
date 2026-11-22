@@ -10,10 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import {
   FAMILIES,
+  EXPLICIT_EXTENDS_FAMILY_IDS,
   FAMILY_BIN_ENV,
+  FAMILY_EXECUTABLE,
   FAMILY_IDS,
   FAMILY_LABEL,
   FAMILY_PICKER_ORDER,
+  GRANT_FAMILY_IDS,
   HOOK_FAMILY_IDS,
   HOOK_PROVIDER_ID_RE,
   MANAGED_FAMILY_PREFIX_RE,
@@ -22,10 +25,15 @@ import {
   PROVIDER_EXTENDS,
   PROVIDER_EXTENDS_IDS,
   ROLES,
+  PRE_CURSOR_FAMILY_IDS,
+  PRE_CURSOR_PROVIDER_IDS,
+  STANDALONE_FAMILY_IDS,
   WRAPPER_FAMILY_IDS,
   WRAPPER_PROVIDER_ID_RE,
   familyFromProviderId,
   ownedProviderId,
+  persistedFamilyIds,
+  persistedProviderIds,
 } from '../plugin/shared/runtime/families.ts';
 import { Family, ProviderId } from '../plugin/shared/contracts.ts';
 import { FAMILIES as LAUNCHER_FAMILIES, GATE_FAMILIES, ROLES as LAUNCHER_ROLES } from '../plugin/server/launchers.ts';
@@ -34,10 +42,16 @@ import { FAMILIES as VIEW_FAMILIES, OWNED_PROVIDER_IDS as VIEW_OWNED, PROVIDER_E
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-test('the registry declares the six current families on two transports', () => {
-  assert.deepEqual(FAMILY_IDS, ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity']);
+test('the registry declares the seven current families on two transports', () => {
+  assert.deepEqual(FAMILY_IDS, ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity', 'cursor']);
   assert.deepEqual(HOOK_FAMILY_IDS, ['codex', 'pi', 'claude', 'antigravity']);
-  assert.deepEqual(WRAPPER_FAMILY_IDS, ['devin', 'opencode']);
+  assert.deepEqual(WRAPPER_FAMILY_IDS, ['devin', 'opencode', 'cursor']);
+  assert.deepEqual(EXPLICIT_EXTENDS_FAMILY_IDS, ['opencode', 'cursor']);
+  assert.deepEqual(STANDALONE_FAMILY_IDS, ['codex', 'pi', 'devin', 'claude', 'opencode']);
+  assert.equal(PROVIDER_EXTENDS.cursor, 'cursor');
+  assert.equal(FAMILY_EXECUTABLE.cursor, 'cursor-agent');
+  assert.equal(FAMILY_BIN_ENV.cursor, 'SLP_CURSOR_BIN');
+  assert.equal(GRANT_FAMILY_IDS.includes('cursor'), false, 'Cursor carries no session-open grant');
   // The registry is pure — no imports at all, so the client bundle can
   // never pull a server-only or node module through it.
   const source = readFileSync(join(root, 'plugin/shared/runtime/families.ts'), 'utf8');
@@ -60,9 +74,9 @@ test('every slp-<family>-<role> id classifies correctly by transport', () => {
 });
 
 test('OWNED_PROVIDER_IDS is exactly the family × role cartesian product', () => {
-  assert.equal(OWNED_PROVIDER_IDS.length, 18);
+  assert.equal(OWNED_PROVIDER_IDS.length, 21);
   assert.equal(OWNED_PROVIDER_IDS.length, FAMILY_IDS.length * ROLES.length);
-  assert.equal(new Set(OWNED_PROVIDER_IDS).size, 18);
+  assert.equal(new Set(OWNED_PROVIDER_IDS).size, 21);
   assert.deepEqual(
     [...OWNED_PROVIDER_IDS].sort(),
     FAMILY_IDS.flatMap(family => ROLES.map(role => `slp-${family}-${role}`)).sort(),
@@ -139,4 +153,17 @@ test('wire schemas derive their domains from the registry', () => {
   }
   assert.equal(ProviderId.safeParse('slp-gpt-lead').success, false);
   assert.equal(ProviderId.safeParse('slp-codex-admin').success, false);
+});
+
+test('the six-family vocabulary written before Cursor stays an admitted persisted domain', () => {
+  const six = ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity'];
+  const sixIds = six.flatMap(family => ROLES.map(role => `slp-${family}-${role}`)).sort();
+  assert.deepEqual([...PRE_CURSOR_FAMILY_IDS], six);
+  assert.deepEqual(PRE_CURSOR_PROVIDER_IDS, sixIds);
+  assert.deepEqual(persistedFamilyIds([...six].reverse()), PRE_CURSOR_FAMILY_IDS);
+  assert.deepEqual(persistedProviderIds([...sixIds].reverse()), PRE_CURSOR_PROVIDER_IDS);
+  assert.deepEqual(persistedFamilyIds([...FAMILY_IDS]), FAMILY_IDS);
+  // A partial or mixed vocabulary is still refused.
+  assert.equal(persistedFamilyIds([...six.slice(0, 5), 'cursor']), null);
+  assert.equal(persistedProviderIds([...sixIds, 'slp-cursor-peer']), null);
 });

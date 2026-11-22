@@ -3,7 +3,9 @@
 // No filesystem, no SDK, no clocks: every function maps inputs to a Plan plus
 // the single plain-JSON patch object that would reach `config.patch`. The
 // compatibility validator reproduces the pinned host's persisted schema and
-// migration behavior (S/persisted-config.js for @getpaseo/server 0.8.0) so a
+// migration behavior (S/persisted-config.js for @getpaseo/server 0.8.0), plus
+// the `extends: "cursor"` base of the Cursor aliases (see
+// HostProviderOverridesSchema), so a
 // field that host persistence would drop or reject is reported as SCHEMA_LOSS
 // before any mutation — the file is never "fixed" by stripping.
 
@@ -47,6 +49,7 @@ import {
   FAMILY_LABEL,
   HOOK_FAMILY_IDS,
   OWNED_PROVIDER_ID_RE,
+  ROLES,
   ownedProviderId,
 } from "../shared/runtime/families.ts";
 import {
@@ -301,6 +304,32 @@ function stripRemovedConfigFields(parsed: unknown): unknown {
   return root;
 }
 
+// The pinned host schema predates `extends: "cursor"`. A host that routes that
+// base to its Cursor ACP client accepts it with the same label and command
+// rules as `extends: "acp"`. Only the owned Cursor aliases that state exactly
+// that base are checked under the ACP rules; every other entry, and every
+// other `extends` value, keeps the pinned rules. The parsed output carries the
+// recorded value, so persistence keeps it verbatim.
+const CURSOR_ALIAS_IDS: ReadonlySet<string> = new Set(ROLES.map(role => ownedProviderId("cursor", role)));
+const HostProviderOverridesSchema = z.unknown().transform((value, ctx) => {
+  const aliases = isRecord(value)
+    ? Object.keys(value).filter(id => CURSOR_ALIAS_IDS.has(id) && isRecord(value[id]) && value[id].extends === PROVIDER_EXTENDS.cursor)
+    : [];
+  const presented = aliases.length === 0 ? value : Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .map(([id, entry]) => [id, aliases.includes(id) ? { ...(entry as Record<string, unknown>), extends: "acp" } : entry]));
+  const result = ProviderOverridesSchema.safeParse(presented);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const alias = aliases.includes(String(issue.path[0]));
+      const message = alias ? issue.message.replace('extending "acp"', `extending "${PROVIDER_EXTENDS.cursor}"`) : issue.message;
+      ctx.addIssue({ code: "custom", message, path: issue.path });
+    }
+    return z.NEVER;
+  }
+  for (const id of aliases) result.data[id] = { ...result.data[id], extends: PROVIDER_EXTENDS.cursor };
+  return result.data;
+});
+
 export const PinnedPersistedConfigSchema = z
   .object({
     $schema: z.string().optional(),
@@ -370,7 +399,7 @@ export const PinnedPersistedConfigSchema = z
     worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({
-        providers: z.preprocess(normalizeAgentProviders, ProviderOverridesSchema).optional(),
+        providers: z.preprocess(normalizeAgentProviders, HostProviderOverridesSchema).optional(),
         idleRuntimeCleanup: z.boolean().optional(),
         resumeOnStartup: z.boolean().optional(),
         resumePrompt: z.string().optional(),

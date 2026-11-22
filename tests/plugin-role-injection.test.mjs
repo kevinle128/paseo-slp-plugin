@@ -24,12 +24,14 @@ import { roleBundle } from '../plugin/server/runtime/cli/role-bundle.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const GATE = join(root, 'bin', 'slp-gate.mjs');
 const HOOK_FAMILIES = ['codex', 'pi', 'claude', 'antigravity'];
-const ALL_FAMILIES = [...HOOK_FAMILIES, 'devin', 'opencode'];
+const ALL_FAMILIES = [...HOOK_FAMILIES, 'devin', 'opencode', 'cursor'];
 const ROLES = ['supervisor', 'lead', 'peer'];
 const HOOK_IDS = HOOK_FAMILIES.flatMap(f => ROLES.map(r => `slp-${f}-${r}`));
 const DEVIN_IDS = ROLES.map(r => `slp-devin-${r}`);
-const WRAPPER_IDS = [...DEVIN_IDS, ...ROLES.map(r => `slp-opencode-${r}`)];
+const WRAPPER_IDS = [...DEVIN_IDS, ...ROLES.map(r => `slp-opencode-${r}`), ...ROLES.map(r => `slp-cursor-${r}`)];
 const OWNED_IDS = [...HOOK_IDS, ...WRAPPER_IDS].sort();
+// Wrapper families without a session-open grant: the hook passes them through.
+const UNGRANTED_IDS = [...DEVIN_IDS, ...ROLES.map(r => `slp-cursor-${r}`)];
 
 function tmp(t, prefix = 'roleinj-') {
   mkdirSync(join(root, '.local-checks'), { recursive: true });
@@ -522,7 +524,7 @@ test('session_open: every hook id gets a fresh non-empty grant; others pass thro
   for (const reason of ['create', 'resume', 'refresh', 'import']) {
     for (const id of OWNED_IDS) {
       const out = injection.sessionOpen(openReq(id, { reason }));
-      if (DEVIN_IDS.includes(id)) {
+      if (UNGRANTED_IDS.includes(id)) {
         assert.equal(out, undefined, `${id} (${reason}) must pass through`);
         continue;
       }
@@ -537,8 +539,8 @@ test('session_open: every hook id gets a fresh non-empty grant; others pass thro
       assert.equal(out.agentId, 'agent-1');
     }
   }
-  assert.equal(seen.size, (OWNED_IDS.length - DEVIN_IDS.length) * 4, 'every open gets a distinct grant token');
-  for (const provider of ['codex', 'custom-tool', 'slp-devin-peer']) {
+  assert.equal(seen.size, (OWNED_IDS.length - UNGRANTED_IDS.length) * 4, 'every open gets a distinct grant token');
+  for (const provider of ['codex', 'custom-tool', 'slp-devin-peer', 'slp-cursor-peer']) {
     assert.equal(injection.sessionOpen(openReq(provider)), undefined);
   }
 });
@@ -711,7 +713,7 @@ test('thin aliases: every entry gets a single-element launcher argv0; hook env a
   );
   const resolution = { node: { path: '/opt/node/bin/node', version: '24.0.0' }, binaries };
   const entries = desiredProviderEntries(launchSet, resolution, f.candidate, f.home, null);
-  assert.equal(Object.keys(entries).length, 18);
+  assert.equal(Object.keys(entries).length, 21);
   for (const id of OWNED_IDS) {
     const family = id.split('-')[1];
     const entry = entries[id];
@@ -730,8 +732,8 @@ test('thin aliases: every entry gets a single-element launcher argv0; hook env a
     // One label template for every transport: `SLP <Family> <Role>` with
     // FAMILY_LABEL as the single display-name source.
     assert.equal(entry.label, `SLP ${FAMILY_LABEL[family]} ${roleDisplay}`);
-    if (['devin', 'opencode'].includes(family)) {
-      assert.equal(entry.extends, 'acp');
+    if (['devin', 'opencode', 'cursor'].includes(family)) {
+      assert.equal(entry.extends, family === 'cursor' ? 'cursor' : 'acp');
       assert.equal(entry.env.SLP_FAMILY_BIN, undefined);
       continue;
     }

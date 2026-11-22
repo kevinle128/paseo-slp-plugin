@@ -32,7 +32,7 @@ import { acpRolePrompt, claudeRolePrompt, injectRole, piRoleArgs } from '../plug
 import { FAMILY_EXECUTABLE } from '../plugin/shared/runtime/families.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const FAMILIES = ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity'];
+const FAMILIES = ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity', 'cursor'];
 const ROLES = ['supervisor', 'lead', 'peer'];
 const sq = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 
@@ -599,7 +599,7 @@ test('launchers: legacy4 manifest bytes verify unchanged; mixed, partial and unk
   manifest.families = ['codex', 'pi', 'devin', 'claude'];
   manifest.launcherFamilies = [...manifest.families];
   manifest.gateFamilies = ['codex', 'pi', 'claude'];
-  delete manifest.binaries.opencode; delete manifest.binaries.antigravity;
+  delete manifest.binaries.opencode; delete manifest.binaries.antigravity; delete manifest.binaries.cursor;
   const bytes = JSON.stringify(manifest, null, 2) + '\n';
   const digest = createHash('sha256').update(bytes).digest('hex');
   const directory = join(f.stableRoot, 'launchers', digest); mkdirSync(directory);
@@ -632,20 +632,42 @@ test('launchers: legacy4 manifest bytes verify unchanged; mixed, partial and unk
   await assert.rejects(f.launchers.publish({ daemonHome: f.home, stableRoot: f.stableRoot, operationId: 'bad-legacy-publish', candidate: { sha256: f.sha, runtimePath: f.candidate }, node: f.node, binaries }), /missing a binaries.opencode resolution/);
 });
 
-test('launchers: publish writes manifest + 15 quoted launchers (12 gate + 3 shim), verify round-trips', async t => {
+test('launchers: six-family manifest bytes written before Cursor verify unchanged; new publication needs the cursor resolution', async t => {
+  const f = await fixtureRuntime(t);
+  const manifest = JSON.parse(readFileSync(f.manifestPath, 'utf8'));
+  manifest.families = ['codex', 'pi', 'devin', 'claude', 'opencode', 'antigravity'];
+  manifest.launcherFamilies = [...manifest.families];
+  delete manifest.binaries.cursor;
+  const bytes = JSON.stringify(manifest, null, 2) + '\n';
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const directory = join(f.stableRoot, 'launchers', digest); mkdirSync(directory);
+  writeFileSync(join(directory, 'launch.json'), bytes, { mode: 0o644 });
+  for (const family of manifest.families) for (const role of ROLES) {
+    const name = `slp-${family}-${role}`;
+    const original = readFileSync(join(f.set.directory, name), 'utf8');
+    writeFileSync(join(directory, name), original.replaceAll(f.set.directory, directory).replaceAll(f.set.launchManifestSha256, digest), { mode: 0o755 });
+  }
+  const verified = await f.launchers.verify(directory);
+  assert.equal(verified.launchSetSha256, digest); assert.equal(verified.files.length, 18);
+  assert.equal(readFileSync(join(directory, 'launch.json'), 'utf8'), bytes);
+  const binaries = structuredClone(f.binaries); delete binaries.cursor;
+  await assert.rejects(f.launchers.publish({ daemonHome: f.home, stableRoot: f.stableRoot, operationId: 'six-family-publish', candidate: { sha256: f.sha, runtimePath: f.candidate }, node: f.node, binaries }), /missing a binaries.cursor resolution/);
+});
+
+test('launchers: publish writes manifest + 21 quoted launchers (12 gate + 9 shim), verify round-trips', async t => {
   const f = await fixtureRuntime(t);
   assert.equal(basename(f.set.directory), f.set.launchSetSha256);
   assert.equal(f.set.launchManifestSha256, f.set.launchSetSha256);
   const manifest = JSON.parse(readFileSync(f.manifestPath).toString('utf8'));
   assert.equal(manifest.schemaVersion, 1);
-  // The manifest keeps the full five-family resolution record — the shipped
+  // The manifest keeps the full seven-family resolution record — the shipped
   // devin shim validates the complete sets — and records which families are
   // gate execs vs shim launchers.
   assert.deepEqual(manifest.families.sort(), [...FAMILIES].sort());
   assert.deepEqual(manifest.launcherFamilies.sort(), [...FAMILIES].sort());
   assert.deepEqual(manifest.gateFamilies.sort(), ['antigravity', 'claude', 'codex', 'pi']);
   const names = readdirSync(f.set.directory).sort();
-  assert.equal(names.length, 19);
+  assert.equal(names.length, 22);
   assert.deepEqual(
     f.set.files.map(file => basename(file.path)).sort(),
     FAMILIES.flatMap(family => ROLES.map(role => `slp-${family}-${role}`)).sort(),

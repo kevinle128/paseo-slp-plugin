@@ -35,7 +35,12 @@ to [OpenCode support](../opencode.md). Adding a family requires a registry
 entry, executable recognition, payload bootstrap handling and tests. The shim
 also validates its bootstrap family/role domain before importing TypeScript;
 keep that independent validation current. Persisted-domain expansion requires
-historical hash, ownership and CAS compatibility review. Registry derivation
+historical hash, ownership and CAS compatibility review: freeze the previous
+current domain as a historical one. Each family adds capability rows and gaps
+to the enforcement-status view, so re-measure the worst-case view; the
+bindings cap can drop. A family whose base a stock host rejects stays out of
+the standalone installer (`managedOnly`) and needs the pinned config
+validator to admit that base for its owned IDs only. Registry derivation
 never authorizes rewriting retained records.
 
 ## Provider generation
@@ -80,7 +85,7 @@ command tail and provider env. `[node, gate]` would probe Node's version;
 an env-dependent launcher would not resolve its binary. Launchers clear
 `NODE_OPTIONS` before Node starts, in addition to child runtime sanitization.
 
-Launch sets publish eighteen files: twelve hook gates and six ACP shim
+Launch sets publish twenty-one files: twelve hook gates and nine ACP shim
 dispatchers. Manifests pin `launcherFamilies` and `gateFamilies` so verification
 reconstructs the correct bytes. Retained manifests without these fields use
 their historical all-shim plan and exact domain.

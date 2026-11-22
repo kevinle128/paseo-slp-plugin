@@ -328,8 +328,8 @@ test('every one of the 54 observation tuples yields the exact pinned inventory',
   for (const observed of tuples) {
     const label = JSON.stringify(observed);
     const { records, gaps } = auditCapabilities({ now: NOW, observed });
-    assert.equal(records.length, 51, `records ${label}`);
-    assert.equal(gaps.length, 26, `gaps ${label}`);
+    assert.equal(records.length, 57, `records ${label}`);
+    assert.equal(gaps.length, 30, `gaps ${label}`);
     // Exact id/family inventory — a new row or family without a pin raise
     // must fail here, never be shed by the wire cap.
     assert.deepEqual(
@@ -766,9 +766,9 @@ test('the production view emits the full pinned inventory with zero omissions', 
   const enforcement = createEnforcement({ journal: stubJournal(null), now: () => new Date(NOW) });
   const view = await enforcement.readView({ schemaVersion: 1, target: target(home) }, { agents: { list: agentsListOk() } });
   // Pins equal the audit inventory: everything produced is emitted verbatim.
-  assert.equal(view.capabilities.length, 51);
+  assert.equal(view.capabilities.length, 57);
   assert.equal(view.capabilities.length, WIRE_LIMITS.capabilities);
-  assert.equal(view.gaps.length, 26);
+  assert.equal(view.gaps.length, 30);
   assert.equal(view.gaps.length, WIRE_LIMITS.gaps);
   // No omission in the production domain — completeness is the empty report.
   assert.deepEqual(view.completeness, []);
@@ -920,7 +920,7 @@ test('one bound owner: every wire cap lives in WIRE_LIMITS and is enforced by th
   ]);
   // P2-e: bindings carries real membership rows, capped at the pinned limit.
   assert.equal(arrayCap(out.bindings), WIRE_LIMITS.bindings);
-  assert.equal(WIRE_LIMITS.bindings, 16);
+  assert.equal(WIRE_LIMITS.bindings, 13);
   assert.equal(WIRE_LIMITS.bindingsRepos, 16);
 });
 
@@ -1540,7 +1540,7 @@ test('P2-e §4.5: the limitation table matches the pinned literals verbatim, byt
   );
 });
 
-test('P2-e §4.4: 16 is the largest bindings cap whose worst-case view stays under 64 KiB', () => {
+test('P2-e §4.4: the bindings cap is the largest row count whose worst-case view stays under 64 KiB', () => {
   const audit = fixtureAudit();
   // §4.4 builder per errata E-P2E-2 (contract-p2e-errata.vi.md): collections
   // sit at their caps; every CALLER- or DATA-DERIVED string is escape-filled
@@ -1591,17 +1591,16 @@ test('P2-e §4.4: 16 is the largest bindings cap whose worst-case view stays und
     completeness: allPairs(),
     acceptance: 'not-established-by-this-view',
   });
-  // Candidate set from the contract: {64, 32, 16} — measure all three
-  // (the schema caps bindings at WIRE_LIMITS.bindings, so the over-cap
-  // candidates are measured on the pre-parse object).
+  // Measure the cap and one row more (the schema caps bindings at
+  // WIRE_LIMITS.bindings, so the over-cap count is measured on the
+  // pre-parse object).
+  const cap = WIRE_LIMITS.bindings;
   const measured = Object.fromEntries(
-    [64, 32, 16].map(n => [n, utf8Bytes({ ...worstAt(Math.min(n, WIRE_LIMITS.bindings)), bindings: Array.from({ length: n }, fatBindingWorst) })]),
+    [cap, cap + 1].map(n => [n, utf8Bytes({ ...worstAt(Math.min(n, cap)), bindings: Array.from({ length: n }, fatBindingWorst) })]),
   );
-  console.info('P2-e bindings worst-case fixture', { measured, cap: WIRE_LIMITS.bindings });
-  // 64 and 32 exceed the schema cap anyway; byte-wise they are also over.
-  assert.ok(measured[64] > MAX_RPC_BYTES && measured[32] > MAX_RPC_BYTES);
-  assert.ok(measured[16] < MAX_RPC_BYTES, `worst-case at cap 16 is ${measured[16]} bytes`);
-  assert.equal(WIRE_LIMITS.bindings, 16, 'the largest fitting candidate');
+  console.info('P2-e bindings worst-case fixture', { measured, cap });
+  assert.ok(measured[cap] < MAX_RPC_BYTES, `worst-case at cap ${cap} is ${measured[cap]} bytes`);
+  assert.ok(measured[cap + 1] > MAX_RPC_BYTES, `cap ${cap} is not the largest fitting count: ${cap + 1} rows take ${measured[cap + 1]} bytes`);
   // The at-cap fixture passes the emit guard verbatim.
   const atCap = worstAt(WIRE_LIMITS.bindings);
   assert.deepEqual(boundStatusView(atCap), atCap);

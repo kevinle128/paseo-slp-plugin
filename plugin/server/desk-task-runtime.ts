@@ -7,6 +7,7 @@ import { reobservePeerReference, type ReferenceHost } from "./peer-reference.ts"
 import { pathToFileURL } from "node:url";
 import { candidateModulePath } from "./candidate-module.ts";
 import { getPath } from "./config-view.ts";
+import { EXPLICIT_EXTENDS_FAMILY_IDS, FAMILY_LABEL, familyFromProviderId } from "../shared/runtime/families.ts";
 import type { DeskRejectionValue } from "../shared/enforcement.ts";
 
 export type TaskRuntimeSelection = {
@@ -78,13 +79,18 @@ async function warmedSnapshot(host: TaskRuntimeApi, cwd: string, warmup: Provide
   return observed;
 }
 
-/** Preserve published transport facts. For current snapshots lacking OpenCode
- * transport, read the live daemon config around a fresh snapshot. Never infer
- * ACP from an alias or use config to invent ready/enabled provider evidence. */
+/** Preserve published transport facts. For current snapshots lacking the
+ * transport of a family that must state it (OpenCode, Cursor), read the live
+ * daemon config around a fresh snapshot. Never infer the transport from an
+ * alias or use config to invent ready/enabled provider evidence. */
 export async function observeTaskProviders(host: TaskRuntimeApi, cwd: string, warmup: ProviderWarmup = PROVIDER_WARMUP) {
   let observed = await warmedSnapshot(host, cwd, warmup);
   if (observed.error) return observed;
-  const missing = new Set(observed.entries.filter(entry => /^slp-opencode-(supervisor|lead|peer)$/.test(entry.provider)
+  const explicitFamily = (provider: string) => {
+    const family = familyFromProviderId(provider);
+    return family !== null && EXPLICIT_EXTENDS_FAMILY_IDS.includes(family) ? family : null;
+  };
+  const missing = new Set(observed.entries.filter(entry => explicitFamily(entry.provider) !== null
     && entry.enabled === true && entry.status === "ready" && !entry.error && entry.extends === undefined).map(entry => entry.provider));
   if (missing.size === 0 || typeof host.config?.get !== "function") return observed;
   const transport = (config: unknown, id: string) => {
@@ -92,7 +98,7 @@ export async function observeTaskProviders(host: TaskRuntimeApi, cwd: string, wa
     return typeof value === "string" ? value : undefined;
   };
   const unavailable = (entry: typeof observed.entries[number]) => ({ ...entry, status: "unavailable",
-    error: "OpenCode transport evidence is missing, changed or unavailable" });
+    error: `${FAMILY_LABEL[explicitFamily(entry.provider)!]} transport evidence is missing, changed or unavailable` });
   try {
     const beforeConfig = (await host.config.get()).config;
     const before = new Map([...missing].map(id => [id, transport(beforeConfig, id)]));
@@ -107,7 +113,7 @@ export async function observeTaskProviders(host: TaskRuntimeApi, cwd: string, wa
       return { ...entry, extends: value };
     }) };
   } catch {
-    // A failed config read refuses only dependent OpenCode observations. Its
+    // A failed config read refuses only the dependent observations. Its
     // possibly sensitive SDK error and unrelated provider config never escape.
     return { ...observed, entries: observed.entries.map(entry => missing.has(entry.provider) ? unavailable(entry) : entry) };
   }

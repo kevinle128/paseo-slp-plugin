@@ -39,7 +39,7 @@ export const FAMILIES = FAMILY_IDS;
 /** Historical keys are an ownership boundary, not implicit false slots. */
 export function projectionProviderIds(projection: ProjectionValue): readonly string[] {
   const ids = persistedProviderIds(Object.keys(projection.providers));
-  if (ids === null) throw new Error("projection requires exact legacy12, legacy15 or current18 provider keys");
+  if (ids === null) throw new Error("projection requires exact legacy12, legacy15, legacy18 or current21 provider keys");
   return ids;
 }
 export type FamilyName = FamilyId;
