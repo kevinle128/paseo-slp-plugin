@@ -342,6 +342,10 @@ export type TaskGitIo = {
   /** Read-only raw registration evidence; the shared observer parses it. */
   worktreeList(repoRoot: string): Promise<string>;
   absoluteGitDir(repoRoot: string): Promise<string>;
+  lsTree(repoRoot: string, ref: string, path: string): Promise<string>;
+  lsFilesStage(repoRoot: string, path: string): Promise<string>;
+  submodulePaths(repoRoot: string, source: "HEAD" | "file"): Promise<string>;
+  coreWorktree(gitCommonDir: string): Promise<string | null>;
   measureReference(repoRoot: string, baseRef: string): Promise<RepositoryMeasure>;
 };
 
@@ -389,6 +393,17 @@ export function createTaskGitIo(exec: TaskExecLike = defaultExec): TaskGitIo {
     },
     worktreeList: repoRoot => run(repoRoot, ["worktree", "list", "--porcelain", "-z"]),
     absoluteGitDir: async repoRoot => realpathSync((await run(repoRoot, ["rev-parse", "--absolute-git-dir"])).trim()),
+    lsTree: (repoRoot, ref, path) => run(repoRoot, ["--literal-pathspecs", "ls-tree", "-z", ref, "--", path]),
+    lsFilesStage: (repoRoot, path) => run(repoRoot, ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", path]),
+    submodulePaths: (repoRoot, source) => run(repoRoot, [
+      "config", "--no-includes",
+      ...(source === "HEAD" ? ["--blob", "HEAD:.gitmodules"] : ["--file", join(repoRoot, ".gitmodules")]),
+      "--null", "--get-regexp", "^submodule\\..*\\.path$",
+    ]),
+    coreWorktree: async gitCommonDir => {
+      const out = await runOrNull(gitCommonDir, ["config", "--no-includes", "--file", join(gitCommonDir, "config"), "--get", "core.worktree"]);
+      return out === null ? null : out.trim() || null;
+    },
     lsFiles: async (repoRoot, opts = {}) => {
       const out = await run(repoRoot, ["ls-files", "-z", ...(opts.cached ? ["--cached"] : ["--cached", "--others", "--exclude-standard"])]);
       return out.split("\0").filter(Boolean);

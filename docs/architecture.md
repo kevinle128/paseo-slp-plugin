@@ -553,7 +553,11 @@ longer qualify under the new owner. See [assignment continuity](work-continuity.
   checkout without a trustworthy configured source fails closed. This persists
   across Lead→Peer hops with omitted placement. Target pins
   canonical workspace/cwd/HEAD. Foreign/nested common-dir, configuration conflicts
-  or later drift block effects. New worktree creation is a gap; Lead uses Paseo
+  or later drift block effects, except Supervisor → Lead existing placement into
+  a separate repository or a registered Git submodule of the caller's repository
+  (including linked worktrees of that submodule), which pins and registers in
+  the target repository's desk while failing closed on unregistered nesting or
+  deregistration drift. New worktree creation is a gap; Lead uses Paseo
   create_workspace under its setup authority, then seat-create existing. The
   plugin never invokes setup/worktree-create/install. SDK open can register or
   revive a directory workspace; a timeout retains uncertainty, not cancellation.

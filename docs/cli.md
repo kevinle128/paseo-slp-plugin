@@ -233,7 +233,10 @@ and still require explicit Peer pool pins; the new selector is not run by them.
 
 Placement is a desk argument, not a CLI repository/catalog override. Both
 roles accept caller or existing (workspaceId and/or absolute cwd, reason).
-Existing worktrees share the bound Git-common-dir; foreign/nested repos refuse.
+Existing worktrees share the bound Git-common-dir; foreign/nested repos refuse,
+except Supervisor → Lead existing placement into a separate repository or a
+registered Git submodule of the caller's repository (registered in that target
+repository's desk).
 Source routing/protocol and target execution cwd are pinned separately inside
 the server; CLI prepare still uses its own repository and cannot supply that
 trusted context or route.catalogFile. New worktree: use Paseo create_workspace

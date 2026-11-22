@@ -100,7 +100,9 @@ Task checkout access compares canonical Git common-directory identities, not
 whether the checkout path sits below the Lead's directory. Worktrees of the
 bound repository can live outside that directory. A nested Git repository and
 its worktrees have a different identity and are rejected, even when their
-source checkout is inside the Lead's directory.
+source checkout is inside the Lead's directory (a Lead formed by a Supervisor
+in a registered Git submodule binds to the submodule's own desk and common-dir,
+so its same-repository task access remains isolated to that submodule).
 
 Dispatch or delivery reports `CAPABILITY_GAP` with **different Git repository**
 when those identities differ. It names the `expected` bound repository and

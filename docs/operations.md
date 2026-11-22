@@ -666,12 +666,20 @@ A second workspace on the same checkout does not provide filesystem isolation.
 
 The server normally checks Git-common-dir equality, rejecting foreign/nested
 Git repositories. A Supervisor may form a Lead with existing placement in a
-separate repository only when no registered checkout of either repository
-contains a checkout of the other. The target repository supplies source/target
-pins and registers the Lead in its own desk; the receipt stays on the
-Supervisor's desk. Missing checkout observations fail closed, and all pinned
-verifications repeat the separation check. Lead callers, Peer children and task
-access keep their same-repository boundary.
+separate repository when no registered checkout of either repository contains a
+checkout of the other, or when every overlap is a registered Git submodule of
+a caller checkout (canonical non-symlink path, stage-0 `160000` gitlink in both
+`HEAD` and index, matching unique `submodule.<name>.path` in both
+`HEAD:.gitmodules` and the regular-file `.gitmodules`, and a regular `.git`
+gitdir file resolving to `<parent-git-dir>/modules/<name>`, including linked
+worktrees of that submodule). The target repository supplies source/target
+pins (inheriting the submodule's main checkout via `core.worktree` for linked
+submodule worktrees when needed) and registers the Lead in its own desk; the
+receipt stays on the Supervisor's desk. Unregistered nested repositories,
+upward placement into a containing repository, spoofed or deregistered
+submodules, and missing checkout/submodule observations fail closed, and all
+pinned verifications repeat the separation check. Lead callers, Peer children
+and task access keep their same-repository boundary.
 Explicit placement pins source top, config/HEAD and SDK target ID/cwd/HEAD;
 routing/protocol come from source and provider snapshots/execution use target.
 Conflicting target-local catalog/protocol refuses; no local/user-pool switch or

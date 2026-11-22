@@ -3,8 +3,8 @@
 // One desk = one Git repository: placement stays in the caller's repository,
 // except that a Supervisor may place a Lead in another repository's existing
 // workspace; that Lead registers in, and is pinned to, the target repository.
-import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { DeskSeatCreateInputValue } from "../shared/delegation.ts";
 import type { DeskRejectionValue } from "../shared/enforcement.ts";
@@ -38,7 +38,8 @@ export type FormationTargetPin = {
 };
 type Phase = (name: string, value: unknown) => void;
 type Guard = () => Promise<DeskRejectionValue | null>;
-type Git = Pick<TaskGitIo, "commonDir" | "top" | "revParse" | "worktreeList">;
+type Git = Pick<TaskGitIo, "commonDir" | "top" | "revParse" | "worktreeList">
+  & Partial<Pick<TaskGitIo, "absoluteGitDir" | "lsTree" | "lsFilesStage" | "submodulePaths" | "coreWorktree">>;
 
 export class FormationPlacementError extends Error {
   readonly code: DeskRejectionValue["code"];
@@ -85,6 +86,61 @@ function directory(value: string): string {
   } catch { throw new FormationPlacementError("CAPABILITY_GAP", "placement requires an existing absolute checkout directory"); }
 }
 
+const SUBMODULE_CONFIG_CAP = 256 * 1024;
+function safeRelativeSegments(value: string, forbidDotGit: boolean): string[] | null {
+  if (!value || value.startsWith("/") || value.includes("\0") || value.includes("\\")) return null;
+  const parts = value.split("/");
+  if (parts.some(part => part === "" || part === "." || part === ".." || (forbidDotGit && part === ".git"))) return null;
+  return parts;
+}
+function realDirectoryPath(root: string, parts: string[]): string | null {
+  let cur = root;
+  for (const part of parts) {
+    cur = join(cur, part);
+    const stat = lstatSync(cur);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+  }
+  const canonical = realpathSync(cur);
+  return canonical.startsWith(`${root}/`) ? canonical : null;
+}
+function regularFileWithinCap(path: string, cap: number): boolean {
+  let fd: number;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); } catch { return false; }
+  try {
+    const stat = fstatSync(fd);
+    return stat.isFile() && stat.size <= cap;
+  } catch { return false; }
+  finally { closeSync(fd); }
+}
+function parseSubmoduleEntries(raw: string): { name: string; path: string }[] | null {
+  if (Buffer.byteLength(raw) > SUBMODULE_CONFIG_CAP) return null;
+  const entries: { name: string; path: string }[] = [];
+  for (const record of raw.split("\0").filter(Boolean)) {
+    const nl = record.indexOf("\n");
+    if (nl < 0) return null;
+    const key = record.slice(0, nl), value = record.slice(nl + 1);
+    const match = /^submodule\.(.+)\.path$/i.exec(key);
+    if (!match) continue;
+    entries.push({ name: match[1], path: value });
+  }
+  return entries;
+}
+function uniqueSubmoduleName(raw: string, relPath: string): string | null {
+  const entries = parseSubmoduleEntries(raw);
+  if (!entries) return null;
+  const matches = entries.filter(e => e.path === relPath);
+  if (matches.length !== 1) return null;
+  // A multi-valued submodule.<name>.path resolves last-one-wins in Git; fail closed.
+  return entries.filter(e => e.name === matches[0].name).length === 1 ? matches[0].name : null;
+}
+function uniqueSubmodulePath(raw: string, name: string): string | null {
+  const entries = parseSubmoduleEntries(raw);
+  if (!entries) return null;
+  const matches = entries.filter(e => e.name === name);
+  if (matches.length !== 1) return null;
+  return entries.filter(e => e.path === matches[0].path).length === 1 ? matches[0].path : null;
+}
+
 export function createFormationPlacement(deps: {
   repo: { gitCommonDir: string }; host: () => FormationWorkspaceApi | null; git?: Git;
   budgets?: { readMs: number; effectMs: number };
@@ -118,6 +174,14 @@ export function createFormationPlacement(deps: {
     }
     return value;
   };
+  const mainCheckout = async (repo: string): Promise<string | null> => {
+    if (basename(repo) === ".git") return dirname(repo);
+    if (!git.coreWorktree || !regularFileWithinCap(join(repo, "config"), SUBMODULE_CONFIG_CAP)) return null;
+    try {
+      const configured = await git.coreWorktree(repo);
+      return configured ? realpathSync(resolve(repo, configured)) : null;
+    } catch { return null; }
+  };
   const locateSource = async (start: string, repo = deps.repo.gitCommonDir) => {
     const cwd = directory(start); await common(cwd, repo);
     const top = directory(await git.top(cwd)); await common(top, repo);
@@ -126,14 +190,16 @@ export function createFormationPlacement(deps: {
     // pools). A linked checkout lacking both files inherits only its same-Git
     // main checkout, never an unrelated ancestor or the user pool by accident.
     if (Object.values(local).some(value => value !== null)) return { repository: top, configuration: local, inherited: false };
-    const main = dirname(repo);
-    if (top === main) return { repository: top, configuration: local, inherited: false };
-    try {
-      const repository = directory(main); await common(repository, repo);
-      if (directory(await git.top(repository)) !== repository) throw new Error("not the main checkout");
-      const pins = configuration(repository);
-      if (Object.values(pins).some(value => value !== null)) return { repository, configuration: pins, inherited: true };
-    } catch (error) { if (error instanceof FormationPlacementError && error.code === "ROUTE_DRIFT") throw error; }
+    const main = await mainCheckout(repo);
+    if (main !== null && top === main) return { repository: top, configuration: local, inherited: false };
+    if (main !== null) {
+      try {
+        const repository = directory(main); await common(repository, repo);
+        if (directory(await git.top(repository)) !== repository) throw new Error("not the main checkout");
+        const pins = configuration(repository);
+        if (Object.values(pins).some(value => value !== null)) return { repository, configuration: pins, inherited: true };
+      } catch (error) { if (error instanceof FormationPlacementError && error.code === "ROUTE_DRIFT") throw error; }
+    }
     throw new FormationPlacementError("CAPABILITY_GAP", "linked checkout has no trustworthy same-repository configuration source; restore the main checkout routing/protocol configuration before formation; no implicit user-pool fallback");
   };
   const sourceAt = async (start: string, repo = deps.repo.gitCommonDir): Promise<FormationSourcePin> => {
@@ -199,12 +265,77 @@ export function createFormationPlacement(deps: {
       throw new FormationPlacementError("CAPABILITY_GAP", "placement worktree registrations cannot be observed; cross-repository Lead placement fails closed");
     }
   };
-  // Two repositories are separate desks only when no registered checkout of
-  // either contains, or is contained by, a checkout of the other.
+  // Verify that childRoot is strictly a registered Git submodule checkout of
+  // parentRoot whose common-dir matches targetCommonDir under parentGitDir/modules/<name>.
+  const verifySubmoduleCheckout = async (parentRoot: string, childRoot: string, targetCommonDir: string): Promise<boolean> => {
+    if (!git.absoluteGitDir || !git.lsTree || !git.lsFilesStage || !git.submodulePaths) return false;
+    if (!childRoot.startsWith(`${parentRoot}/`)) return false;
+    const relPath = childRoot.slice(parentRoot.length + 1);
+    const relParts = safeRelativeSegments(relPath, true);
+    if (!relParts) return false;
+    try {
+      if (realDirectoryPath(parentRoot, relParts) !== childRoot) return false;
+      if (!regularFileWithinCap(join(parentRoot, ".gitmodules"), SUBMODULE_CONFIG_CAP)) return false;
+      const headEntries = (await git.lsTree(parentRoot, "HEAD", relPath)).split("\0").filter(Boolean);
+      if (headEntries.length !== 1 || !/^160000 commit [a-f0-9]{40}(?:[a-f0-9]{24})?\t/.test(headEntries[0])
+        || headEntries[0].slice(headEntries[0].indexOf("\t") + 1) !== relPath) return false;
+      const indexEntries = (await git.lsFilesStage(parentRoot, relPath)).split("\0").filter(Boolean);
+      if (indexEntries.length !== 1 || !/^160000 [a-f0-9]{40}(?:[a-f0-9]{24})? 0\t/.test(indexEntries[0])
+        || indexEntries[0].slice(indexEntries[0].indexOf("\t") + 1) !== relPath) return false;
+      const headName = uniqueSubmoduleName(await git.submodulePaths(parentRoot, "HEAD"), relPath);
+      const fileName = uniqueSubmoduleName(await git.submodulePaths(parentRoot, "file"), relPath);
+      if (!headName || headName !== fileName) return false;
+      const nameParts = safeRelativeSegments(headName, false);
+      if (!nameParts) return false;
+      const dotGitStat = lstatSync(join(childRoot, ".git"));
+      if (dotGitStat.isSymbolicLink() || !dotGitStat.isFile()) return false;
+      const parentGitDir = await git.absoluteGitDir(parentRoot);
+      const modulesRoot = realpathSync(join(parentGitDir, "modules"));
+      const expectedCommonDir = realDirectoryPath(modulesRoot, nameParts);
+      if (!expectedCommonDir || expectedCommonDir !== targetCommonDir) return false;
+      if (await git.commonDir(childRoot) !== expectedCommonDir) return false;
+      if (directory(await git.top(childRoot)) !== childRoot) return false;
+      return true;
+    } catch { return false; }
+  };
+  // An overlapping target path inside parentRoot is allowed only when it is
+  // either the registered submodule checkout itself or that submodule's own
+  // metadata directory under parentGitDir/modules/<name> (reported by git worktree list).
+  const isRegisteredSubmodule = async (parentRoot: string, targetPath: string, targetCommonDir: string): Promise<boolean> => {
+    if (await verifySubmoduleCheckout(parentRoot, targetPath, targetCommonDir)) return true;
+    if (targetPath !== targetCommonDir || !git.absoluteGitDir || !git.submodulePaths) return false;
+    try {
+      const parentGitDir = await git.absoluteGitDir(parentRoot);
+      const modulesRoot = realpathSync(join(parentGitDir, "modules"));
+      if (!targetPath.startsWith(`${modulesRoot}/`)) return false;
+      const name = targetPath.slice(modulesRoot.length + 1);
+      const nameParts = safeRelativeSegments(name, false);
+      if (!nameParts || realDirectoryPath(modulesRoot, nameParts) !== targetPath) return false;
+      if (!regularFileWithinCap(join(parentRoot, ".gitmodules"), SUBMODULE_CONFIG_CAP)) return false;
+      const headRel = uniqueSubmodulePath(await git.submodulePaths(parentRoot, "HEAD"), name);
+      const fileRel = uniqueSubmodulePath(await git.submodulePaths(parentRoot, "file"), name);
+      if (!headRel || headRel !== fileRel) return false;
+      const relParts = safeRelativeSegments(headRel, true);
+      if (!relParts) return false;
+      const childRoot = realDirectoryPath(parentRoot, relParts);
+      return childRoot !== null && await verifySubmoduleCheckout(parentRoot, childRoot, targetCommonDir);
+    } catch { return false; }
+  };
+  // Two repositories are separate desks when no registered checkout of either
+  // contains, or is contained by, a checkout of the other — except when every
+  // overlapping pair is a registered Git submodule inside a caller checkout.
   const assertSeparate = async (callerCwd: string, targetCwd: string, code: DeskRejectionValue["code"], workspaceId?: string) => {
-    const caller = await checkouts(directory(callerCwd)), target = await checkouts(targetCwd);
-    if (caller.some(a => target.some(b => overlaps(a, b)))) {
-      throw new FormationPlacementError(code, "placement repository is nested with the caller's repository; a cross-repository Lead requires checkouts that neither contain nor are contained by the caller's", workspaceId);
+    const callerDir = directory(callerCwd), targetDir = directory(targetCwd);
+    const callerTop = directory(await git.top(callerDir)), targetTop = directory(await git.top(targetDir));
+    const targetCommonDir = await observeCommon(targetDir);
+    const caller = [...new Set([...await checkouts(callerDir), callerTop])];
+    const target = [...new Set([...await checkouts(targetDir), targetTop])];
+    for (const a of caller) {
+      for (const b of target) {
+        if (!overlaps(a, b)) continue;
+        if (await isRegisteredSubmodule(a, b, targetCommonDir)) continue;
+        throw new FormationPlacementError(code, "placement repository is nested with the caller's repository; a cross-repository Lead requires separate checkouts or a registered submodule of the caller's repository", workspaceId);
+      }
     }
   };
   // Supervisor + Lead + existing placement is the only combination that may
