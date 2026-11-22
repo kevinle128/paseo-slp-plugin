@@ -574,20 +574,29 @@ test('applyFamilyChange resets dependents against the new family catalog', () =>
   assert.equal(toPi.model, 'pi-model');
   assert.equal(toPi.modeId, '');
 
-  // An unloaded or errored catalog has not answered, so stored model and mode
-  // stay. Feature values still clear: this function is an explicit family switch.
-  const notLoaded = applyFamilyChange(form({ model: 'pi-model', modeId: 'bypass' }), 'pi', undefined);
-  assert.equal(notLoaded.model, 'pi-model');
-  assert.equal(notLoaded.modeId, 'bypass');
+  // A different provider with no catalog answer drops the previous provider's
+  // settings. Re-selecting the same provider keeps them until the catalog answers.
+  const notLoaded = applyFamilyChange(form({ model: 'pi-model', modeId: 'bypass', thinkingOptionId: 'high' }), 'pi', undefined);
+  assert.equal(notLoaded.model, '');
+  assert.equal(notLoaded.modeId, '');
+  assert.equal(notLoaded.thinkingOptionId, '');
   assert.equal(notLoaded.features, '');
+  const reselected = applyFamilyChange(form({ thinkingOptionId: 'high' }), 'devin', undefined);
+  assert.equal(reselected.model, 'swe-2-max');
+  assert.equal(reselected.modeId, 'bypass');
+  assert.equal(reselected.thinkingOptionId, 'high');
+  assert.equal(reselected.features, '');
   const errored = applyFamilyChange(
     form(),
     'codex',
     catalogResult({ error: 'Catalog query failed' }),
   );
-  assert.equal(errored.model, 'swe-2-max');
-  assert.equal(errored.modeId, 'bypass');
+  assert.equal(errored.model, '');
+  assert.equal(errored.modeId, '');
   assert.equal(errored.features, '');
+  const erroredSame = applyFamilyChange(form(), 'devin', catalogResult({ error: 'Catalog query failed' }));
+  assert.equal(erroredSame.model, 'swe-2-max');
+  assert.equal(erroredSame.modeId, 'bypass');
 
   // Same-family re-pick keeps what the catalog declares — features still
   // clear (the rule is unconditional).
@@ -931,6 +940,29 @@ test('a stored mode survives form build and save while the provider catalog is n
   );
   assert.ok('pool' in wiped, wiped.error);
   assert.equal(wiped.pool.options[0].modeId, 'agent', 'an empty form mode is not a delete while the catalog is unloaded');
+  const switched = applyFamilyChange(form.seats[0], 'codex', undefined);
+  assert.equal(switched.model, '');
+  assert.equal(switched.modeId, '');
+  const moved = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], ...switched, enabled: true, model: 'other' }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in moved, moved.error);
+  assert.equal(moved.pool.options[0].provider, 'codex');
+  assert.equal(moved.pool.options[0].modeId, undefined, 'a provider change must not inherit the previous mode');
+  const unset = buildPeerPool(
+    { ...form, seats: [{ ...form.seats[0], family: '', model: '', modeId: '', enabled: false }] },
+    () => [],
+    new Map([[option.id, option]]),
+    pool,
+    () => undefined,
+  );
+  assert.ok('pool' in unset, unset.error);
+  assert.equal(unset.pool.options[0].provider, '');
+  assert.equal(unset.pool.options[0].modeId, undefined, 'an unset provider must not keep the previous mode');
 });
 
 test('draft uids are fresh per seat, ignored by form equality, and copied fresh', () => {

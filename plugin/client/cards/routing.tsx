@@ -158,7 +158,8 @@ export function useRoutingCard({ target, targetKey, isCurrentKey, statusView, ca
   // only the model/mode/thinking values a loaded catalog lists and always
   // clears the per-provider feature values. Re-pressing the active chip
   // still clears features. A catalog that is not loaded yet, or that failed,
-  // keeps the stored model, mode, and thinking option.
+  // keeps the stored model, mode, and thinking option only when the provider
+  // did not change.
   // Same dirty/saved discipline as the field setters.
   const setFamily = (
     role: RoutingRole,

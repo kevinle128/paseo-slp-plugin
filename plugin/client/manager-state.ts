@@ -491,21 +491,22 @@ export const routingChoiceDiffers = (
  *  a kept option must still be declared by that model. `features`/`feature`
  *  always clear: feature ids are per-provider, and undeclared raw-JSON keys
  *  would persist silently into the new family's routing. Feature values still
- *  clear on this explicit switch. An unloaded (undefined) or errored catalog
- *  has not answered, so it must not be treated as a list that excludes the
- *  stored model, mode, or thinking option — clearing those would drop saved
- *  settings before the Human can see them. A loaded catalog keeps a value
- *  only when it lists that value. */
+ *  clear on this explicit switch. An unloaded or errored catalog keeps the
+ *  stored model, mode, and thinking option only when the Human re-selects the
+ *  same provider. Switching to a different provider clears them, so the new
+ *  provider does not inherit the previous one's settings. A loaded catalog
+ *  keeps a value only when it lists that value. */
 export function applyFamilyChange(
-  form: Pick<RoutingRoleForm, "model" | "modeId" | "thinkingOptionId">,
+  form: { family: FamilyName | ""; model: string; modeId: string; thinkingOptionId: string },
   family: FamilyName,
   catalog: CatalogResult | undefined,
 ): RoutingRoleForm {
   const catalogReady = catalog !== undefined && catalog.error == null;
-  const model = !catalogReady ? form.model : catalog.models.some(entry => entry.id === form.model.trim()) ? form.model : "";
-  const modeId = !catalogReady ? form.modeId : catalog.modes.some(mode => mode.id === form.modeId.trim()) ? form.modeId : "";
+  const retain = form.family === family && !catalogReady;
+  const model = retain ? form.model : catalogReady && catalog.models.some(entry => entry.id === form.model.trim()) ? form.model : "";
+  const modeId = retain ? form.modeId : catalogReady && catalog.modes.some(mode => mode.id === form.modeId.trim()) ? form.modeId : "";
   const thinking = thinkingOptionsFor(catalogReady ? catalog : undefined, model);
-  const thinkingOptionId = !catalogReady
+  const thinkingOptionId = retain
     ? form.thinkingOptionId
     : thinking != null && thinking.options.some(option => option.id === form.thinkingOptionId.trim())
       ? form.thinkingOptionId
@@ -819,9 +820,11 @@ export function buildPeerSeat(
   option.enabled = form.enabled;
   option.availability = form.preset ? stored?.availability ?? "ready" : "ready";
   // No catalog answer yet: an empty form mode is not a choice to delete the
-  // saved one. A loaded catalog is the only list that may drop it.
+  // saved one, but only for the same provider. Unset or a different provider
+  // must not inherit the previous mode.
   const storedMode = typeof stored?.modeId === "string" ? stored.modeId.trim() : "";
-  const modeId = form.modeId.trim() || (advertisedModes === undefined ? storedMode : "");
+  const sameProvider = form.family !== "" && stored?.provider === form.family;
+  const modeId = form.modeId.trim() || (advertisedModes === undefined && sameProvider ? storedMode : "");
   if (modeId) option.modeId = modeId;
   else delete option.modeId;
   const thinkingOptionId = form.thinkingOptionId.trim();
