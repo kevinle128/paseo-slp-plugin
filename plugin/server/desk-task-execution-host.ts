@@ -393,8 +393,8 @@ export function createTaskGitIo(exec: TaskExecLike = defaultExec): TaskGitIo {
     },
     worktreeList: repoRoot => run(repoRoot, ["worktree", "list", "--porcelain", "-z"]),
     absoluteGitDir: async repoRoot => realpathSync((await run(repoRoot, ["rev-parse", "--absolute-git-dir"])).trim()),
-    lsTree: (repoRoot, ref, path) => run(repoRoot, ["ls-tree", "-z", ref, "--", path]),
-    lsFilesStage: (repoRoot, path) => run(repoRoot, ["ls-files", "--stage", "-z", "--", path]),
+    lsTree: (repoRoot, ref, path) => run(repoRoot, ["--literal-pathspecs", "ls-tree", "-z", ref, "--", path]),
+    lsFilesStage: (repoRoot, path) => run(repoRoot, ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", path]),
     submodulePaths: (repoRoot, source) => run(repoRoot, [
       "config", "--no-includes",
       ...(source === "HEAD" ? ["--blob", "HEAD:.gitmodules"] : ["--file", join(repoRoot, ".gitmodules")]),

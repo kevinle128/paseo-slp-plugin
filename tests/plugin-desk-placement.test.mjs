@@ -677,6 +677,11 @@ const spoofedSubmodules={
   writeFileSync(join(f.repository,'.gitmodules'),'');
   return subDir;
  },
+ 'multi-valued submodule path in working tree .gitmodules':(f,{subDir})=>{
+  writeFileSync(join(f.repository,'.gitmodules'),readFileSync(join(f.repository,'.gitmodules'),'utf8').replace(/(\tpath = sub\n)/,'$1\tpath = other-sub\n'));
+  assert.match(readFileSync(join(f.repository,'.gitmodules'),'utf8'),/path = other-sub/);
+  return subDir;
+ },
  'submodule removed from index (git rm --cached)':(f,{subDir})=>{
   fixtureGit(f.repository,'rm','--cached','sub');
   return subDir;

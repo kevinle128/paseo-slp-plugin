@@ -129,13 +129,16 @@ function uniqueSubmoduleName(raw: string, relPath: string): string | null {
   const entries = parseSubmoduleEntries(raw);
   if (!entries) return null;
   const matches = entries.filter(e => e.path === relPath);
-  return matches.length === 1 ? matches[0].name : null;
+  if (matches.length !== 1) return null;
+  // A multi-valued submodule.<name>.path resolves last-one-wins in Git; fail closed.
+  return entries.filter(e => e.name === matches[0].name).length === 1 ? matches[0].name : null;
 }
 function uniqueSubmodulePath(raw: string, name: string): string | null {
   const entries = parseSubmoduleEntries(raw);
   if (!entries) return null;
   const matches = entries.filter(e => e.name === name);
-  return matches.length === 1 ? matches[0].path : null;
+  if (matches.length !== 1) return null;
+  return entries.filter(e => e.path === matches[0].path).length === 1 ? matches[0].path : null;
 }
 
 export function createFormationPlacement(deps: {
