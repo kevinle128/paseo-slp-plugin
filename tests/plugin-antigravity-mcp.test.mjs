@@ -47,12 +47,27 @@ test('native MCP declarations contain no credentials; each open has a private re
     assert.notEqual(mcpBinding(cfg, namespace), mcpBinding(cfg, 'b'.repeat(32)));
     assert.equal(mcpBinding(cfg, namespace), mcpBinding(config({ slp_desk: { type: 'http', url: 'http://fresh' } }), namespace));
     assert.equal(definition.mcpServers[0].env, undefined);
+    assert.ok(definition.tools.includes('write_file') && definition.tools.includes('edit_file') && definition.tools.includes('run_command'));
     assert.equal(definition.mcpServers[0].args[1], MCP_CHILD);
     assert.equal(mcpBinding(cfg), mcpBinding(config({ slp_desk: { type: 'http', url: 'http://new-endpoint', headers: { Authorization: 'new' } } })));
     assert.notEqual(mcpBinding(cfg), mcpBinding(config({ paseo: { type: 'http', url: 'http://new' } })));
     assert.equal((await files.open(cfg)).directory, opened.directory);
   } finally { await files.close(); }
   assert.equal(existsSync(opened.directory), false);
+});
+
+test('Electron hosts set ELECTRON_RUN_AS_NODE=1 on MCP relay declarations and bind it in persistence', async () => {
+  const namespace = 'c'.repeat(32);
+  const files = new McpFiles(namespace, true);
+  const cfg = config({ paseo: { type: 'http', url: 'http://127.0.0.1/mcp', headers: { Authorization: 'secret' } } });
+  const opened = await files.open(cfg);
+  try {
+    const text = readFileSync(join(opened.directory, '.agents', 'agents', opened.name + '.md'), 'utf8');
+    assert.ok(!text.includes('secret'));
+    const definition = JSON.parse(text.split('---\n')[1]);
+    assert.deepEqual(definition.mcpServers[0].env, { ELECTRON_RUN_AS_NODE: '1' });
+    assert.notEqual(mcpBinding(cfg, namespace, true), mcpBinding(cfg, namespace, false));
+  } finally { await files.close(); }
 });
 
 test('stdio relays inherit current open credentials and cwd without passing the other server bundle downstream', async t => {
