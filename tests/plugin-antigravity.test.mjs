@@ -30,7 +30,8 @@ for await (const line of createInterface({ input: process.stdin })) {
     conversation_id: conversation, step_index: ordinal++, state: 'DONE', step_type: 'agent_response', text_delta: 'done',
     usage: { input_tokens: 5, output_tokens: 2, cache_read_tokens: 0 }
   }}));
-  console.log(JSON.stringify({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS' } }));
+  const denied_actions = String(frame.message?.content ?? '').includes('deny me') ? [{ action: 'command', display_name: 'rm -rf /' }] : [];
+  console.log(JSON.stringify({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS', denied_actions } }));
 }
 `);
   return { cwd, capture, launch: { command: process.execPath, args: [file], env: { TEST_CAPTURE: capture } } };
@@ -94,7 +95,27 @@ test('Antigravity registered role provider discovers and runs native turns with 
   const launches = readFileSync(f.capture + '.argv', 'utf8').trim().split('\n').map(JSON.parse);
   assert.ok(!launches[0].includes('--conversation'));
   assert.equal(launches[1][launches[1].indexOf('--conversation') + 1], 'native-conversation');
+  assert.deepEqual(events.filter(e => e.type === 'session.notice'), [], 'open and resume emit no startup notice');
+});
 
+test('Antigravity reports policy denials as a session notice', async t => {
+  const f = fakeAgy(t);
+  const registration = createAntigravityProvider('slp-antigravity-peer', 'SLP Antigravity Peer');
+  const connection = await registration.connect({ versions: [1], capabilities: PROVIDER_CAPABILITIES, launch: f.launch });
+  t.after(() => connection.close());
+  const events = []; connection.onEvent(event => events.push(event));
+  await exchange(connection, { type: 'session.open', requestId: 'open', sessionId: 'seat', config: {
+    cwd: f.cwd, env: {}, mcpServers: {}, model: 'gemini-test', mode: 'full-access', persist: false,
+  } }, e => e.type === 'session.ready');
+  await exchange(connection, { type: 'session.prompt', sessionId: 'seat', prompt: {
+    clientMessageId: 'deny', delivery: 'turn', input: { type: 'message', content: [{ type: 'text', text: 'deny me' }] },
+  } }, e => e.type === 'session.turn' && e.state === 'completed');
+  const notices = events.filter(e => e.type === 'session.notice');
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].sessionId, 'seat');
+  assert.match(notices[0].notice.id, /:denied$/);
+  assert.equal(notices[0].notice.title, 'Shell command denied');
+  assert.ok(!notices.some(e => e.notice.id.endsWith(':full-access')));
 });
 
 test('Antigravity records configured MCP plumbing without claiming full live acceptance', () => {
