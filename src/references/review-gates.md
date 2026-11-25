@@ -34,8 +34,8 @@ Reviewers are distinct from writer and accepting owner, with separate judgment,
 neutral context and a stable candidate. One seat may assess related questions, with
 Lead ordering lenses by risk; added seats address distinct unresolved risk or
 separation needs. Reviewer/Auditor are bounded Peer dispositions, not permanent
-phases. Provider-family diversity may help but proves no independence or default
-quota. An unavailable optional lens does not block adequate selection. Spec and
+phases. Engineer=`balanced`, Reviewer=`cross-provider` (`crossProvider: true`), no `fast`.
+Diversity alone proves no independence/quota. An unavailable optional lens does not block adequate selection. Spec and
 Standards are optional descriptive lenses unless the effective rule requires them.
 Spec checks objective/acceptance with requirement citations; Standards checks
 documented conventions, separates hard violations from judgment and skips

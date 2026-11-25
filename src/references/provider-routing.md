@@ -45,13 +45,13 @@ failure blocks without default substitution. The runtime resolves the complete b
 against fresh host providers before effects; eligibility proves no suitability/quota.
 Catalog hash, eligibility and Jev receipts must also be fresh.
 
-V2: follow returned pool policy/selectionGuidance and every preset's
-description/hints. Choose smallest sufficient capability and effort; record
+V2: follow pool policy/selectionGuidance and preset hints.
+Default: Engineer=`balanced`, Reviewer=`cross-provider` (`crossProvider: true`), no `fast`.
+Pick smallest sufficient capability/effort; record
 uncertainty or verification difficulty justifying stronger choices.
 Task labels, brief length, names/order/origin/disposition imply no tier.
 Choose selection.optionId; ambiguous options need selection.thinkingOptionId (null for default).
-For cross-provider name routingRequirements.referenceAgentId; add crossProvider:true
-for an assignment-wide requirement. Runtime families differ (Devin to Codex);
+Cross-provider uses routingRequirements.referenceAgentId and crossProvider:true. Runtime families differ (Devin to Codex);
 missing reference is a gap. Preserve rules/effort limits and compatibility
 selectionSha256/routingContext. Shadow compares independent pairs; Armed pins
 Jev's pair. Relay routingSelection and receipt owner/requestId to Supervisor/Human;

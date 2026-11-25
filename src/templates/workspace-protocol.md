@@ -46,18 +46,19 @@ implementation owner, a design seat or Transition phase.
 
 ## Gate
 
-Independent review triggers across methods:
+Review triggers:
 
 - Auth/permissions, money, PII, data integrity or lifecycle/ownership risk.
 - Hard-to-reverse architecture/contracts or material cross-module behavior.
 - Acceptance established checks cannot sufficiently prove, uncertain writer
   proof, or explicit Human/assignment review.
+- Engineer (`balanced`) changes require Reviewer (`cross-provider`, `crossProvider: true`), never `fast`.
 
 Record the reasoned review selection before the candidate round under installed
 references/review-gates.md: minimum sufficient independent mandates for
 material questions, or not-required only without a trigger. Required review
 and authorized waiver remain distinct; this basis grants no trigger exemption.
-Record a task-selected stop condition and authorized effort/resource bound
+Record stop condition and effort/resource bound
 before correction/review/challenge. Stop at sufficient proof, unresolved
 premise/prerequisite or exhaustion; exhaustion is not ACCEPT.
 
@@ -91,7 +92,7 @@ installed monitoring.md, with task-specific owner/cadence/expiry/stop.
 | Shared-state execution | Per Transition: executor/environment/window, rehearsal, backup/recovery and reconciliation evidence |
 | Work state | Current desk projection for admitted operations when used; authorized brief/checkpoint for semantic decisions or ordinary work |
 | Delivery/completion | Granted actor, artifact/destination, receipt and completion point per assignment |
-| Routing | routing_intent: inherit/pinned/empty; Human owns pool maintenance/budget/quota fallback; option IDs stay in catalog |
+| Routing | routing_intent: inherit/pinned/empty; Engineer=`balanced`, Reviewer=`cross-provider`, no `fast` |
 
 Use established checks from the repository/assignment, never commands inferred
 from this template. Checks requiring a clean environment use a full whitelist
