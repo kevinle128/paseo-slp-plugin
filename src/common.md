@@ -23,8 +23,8 @@ Review selection never waives
 a Human, assignment or protocol obligation; a no-trigger decision and an
 authority-backed waiver are distinct.
 
-Role policy holds cross-project invariants; .paseo-slp/workspace-protocol.md
-holds repository tactics; the assignment supplies outcome and authority.
+Role policy holds cross-project invariants; optional .paseo-slp/workspace-protocol.md
+overrides built-in tactics; the assignment supplies outcome and authority.
 Supervisor/Lead distill repository tactics into Peer assignments. Peers read the
 full Workspace Protocol only when explicitly assigned.
 Guide examples supply no grant, universal topology or cadence.

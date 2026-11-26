@@ -44,12 +44,12 @@ test('plan surfaces the intended modeId with its provenance and warns when nothi
   const withMode = launchPlan(installed, { ...base, binding: { ...piBinding, modeId: 'bypass' } });
   assert.equal(withMode.modeId, 'bypass');
   assert.equal(withMode.modeIdSource, 'binding');
-  assert.deepEqual(withMode.warnings, ['protocol-sha-unavailable']);
+  assert.equal(withMode.warnings, undefined);
   assert.deepEqual(withMode.create.settings, { modeId: 'bypass', features: {} });
   const noMode = launchPlan(installed, { ...base, binding: piBinding });
   assert.equal(noMode.modeId, null);
   assert.equal(noMode.modeIdSource, 'none');
-  assert.deepEqual(noMode.warnings, [NO_MODE_WARNING, 'protocol-sha-unavailable']);
+  assert.deepEqual(noMode.warnings, [NO_MODE_WARNING]);
   assert.deepEqual(noMode.create.settings, { features: {} });
   // Retrospective labels are additive; runtime settings retain their shape.
   assert.deepEqual(Object.keys(noMode.create).sort(),
@@ -468,7 +468,7 @@ test('launchCheck names every failing stage and separates profile completeness f
   const noMode = launchCheck(installed, { ...request, repository: dir, role: 'lead',
     profiles: [{ id: 'slp-lead', provider: 'slp-codex-lead', model: 'gpt-5.6-luna' }], providers: goodProviders });
   assert.equal(noMode.ok, true);
-  assert.deepEqual(noMode.warnings, [NO_MODE_WARNING, 'protocol-sha-unavailable']);
+  assert.deepEqual(noMode.warnings, [NO_MODE_WARNING]);
   // Stale catalog hash is reported before create on the Peer path, while the
   // wrapper's live state is still reported separately.
   const peer = launchCheck(installed, { ...request, repository: dir, role: 'peer', providers,

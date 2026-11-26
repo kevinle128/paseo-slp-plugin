@@ -1,18 +1,20 @@
 import type { RuntimeError } from './types.ts';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { agents } from './agents.ts';
 import { resolveHome } from './managed-home.ts';
 
-// The Supervisor notebook lives at <checkout>/.paseo-slp/notebook.md —
-// checkout-local by contract. A Human browsing another checkout of the same
-// repository (the main checkout while a run lives in a worktree) sees only the
-// local scaffold. This locates notebooks through Paseo agent state: Supervisor
+// An opted-in checkout keeps <cwd>/.paseo-slp/notebook.md. A checkout with no
+// .paseo-slp directory reports the daemon notebook
+// <home>/slp-runtime/state/notebooks/<sha256(gitCommonDir)>.md and never
+// creates it. This locates notebooks through Paseo agent state: Supervisor
 // agents whose cwd shares the repository's git common dir — the property that
 // links a worktree back to its repository. Read-only: reports candidates with
 // status and recency, never copies or mutates notebook content, and issues no
-// verdict about which candidate is authoritative.
+// verdict about which candidate is authoritative. defaultNotebook is always
+// the daemon path.
 const text = (value: unknown) => typeof value === 'string' && value ? value : null;
 
 const supervisor = (agent: ReturnType<typeof agents>[number]) =>
@@ -26,6 +28,17 @@ const commonDir = (dir: string) => {
 
 // resolveHome(): under SLP_MANAGED_RUNTIME=1 an absent home must come from
 // SLP_DAEMON_HOME/PASEO_HOME or throw — never infer ~/.paseo (spec §10).
+const daemonNotebook = (home: string, gitCommonDir: string) => join(home, 'slp-runtime', 'state', 'notebooks',
+  `${createHash('sha256').update(gitCommonDir).digest('hex')}.md`);
+const optedIn = (cwd: string) => {
+  try {
+    const stat = lstatSync(join(cwd, '.paseo-slp'));
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch { return false; }
+};
+const notebookFile = (path: string) => {
+  try { return lstatSync(path).isFile(); } catch { return false; }
+};
 export function notebook(repository: string, home = resolveHome()) {
   if (typeof repository !== 'string' || !isAbsolute(repository)) throw new Error('Absolute repository path required');
   const repoDir = realpathSync(repository);
@@ -43,11 +56,11 @@ export function notebook(repository: string, home = resolveHome()) {
       continue;
     }
     if (agentRoot !== root) continue;
-    const path = join(agent.cwd, '.paseo-slp', 'notebook.md');
-    let notebookExists = false;
-    try { notebookExists = lstatSync(path).isFile(); } catch { /* absent */ }
-    matches.push({ agentId: agent.id, title: agent.title, status: agent.status, cwd: agent.cwd, lastActivityAt: agent.lastActivityAt, notebook: path, notebookExists });
+    const repositoryNotebook = optedIn(agent.cwd);
+    const path = repositoryNotebook ? join(agent.cwd, '.paseo-slp', 'notebook.md') : daemonNotebook(home, root);
+    matches.push({ agentId: agent.id, title: agent.title, status: agent.status, cwd: agent.cwd, lastActivityAt: agent.lastActivityAt,
+      notebook: path, notebookExists: notebookFile(path), notebookSource: repositoryNotebook ? 'repository' : 'daemon' });
   }
   matches.sort((a, b) => (b.lastActivityAt ?? '').localeCompare(a.lastActivityAt ?? ''));
-  return { repository: repoDir, gitCommonDir: root, notebooks: matches, ...(gaps.length ? { gaps } : {}) };
+  return { repository: repoDir, gitCommonDir: root, defaultNotebook: daemonNotebook(home, root), notebooks: matches, ...(gaps.length ? { gaps } : {}) };
 }

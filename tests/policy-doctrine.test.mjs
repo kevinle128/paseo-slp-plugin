@@ -474,6 +474,26 @@ test('Supervisor relays Human words faithfully and STOP never waits for or reviv
     /No cleanup agents or owner revival; resume only on a new Human instruction/);
 });
 
+test('absent workspace protocol is the built-in default and a present file stays opt-in', () => {
+  pins('src/common.md', /Tiny labels and missing\/stale protocols grant no exception/,
+    /optional \.paseo-slp\/workspace-protocol\.md overrides built-in tactics/);
+  pins('src/roles/supervisor.md', /read \.paseo-slp\/workspace-protocol\.md fully before replies\/tactics/,
+    /Observation grants no implementation or replacement authority/,
+    /If absent, apply built-in default routing_intent inherit \(user Peer pool\); read CLAUDE\.md\/AGENTS\.md when present; no gap\/init; file overrides/,
+    /protocol inventory per assigned repo \(path\/sha256\/routing_intent\), refreshed at entry\/handback/);
+  pins('src/roles/lead.md', /before a reply or decision depending on repository tactics/,
+    /built-in routing_intent:inherit, Lean\/Feature\/Transition\/Investigation, standard Gate, no direct Lead write, assignment risk\/authority\/evidence/,
+    /read CLAUDE\.md\/AGENTS\.md when present; no gap\/init; file overrides/);
+  pins('src/references/provider-routing.md', /no trustworthy source means gap, not silent user fallback/,
+    /Verified empty main inherits; routing_intent inherit uses user pool/,
+    /Preparation\/host create are not atomic/);
+  pins(governance, /write owner and retrieval method/,
+    /Notebook scope stays separate from implementation; missing durable retrieval leaves a handback gap/,
+    /Absent \.paseo-slp\/ uses daemon notebook via slp\.mjs notebook or <paseoHome>\/slp-runtime\/state\/notebooks\//,
+    /else indexed timeline; never create \.paseo-slp\/notebook\.md/,
+    /subject to opt-in or built-in protocol/);
+});
+
 test('seat formation policy stays within frozen per-file and total word budgets', () => {
   const caps = {
   "src/common.md": 562,

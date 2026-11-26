@@ -282,13 +282,58 @@ test('hop2 full pin uses main source without new phase or membership gate',async
  assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));assert.equal(out.phases.length,5);
 });
 
-for(const placement of [undefined,{kind:'caller'}])test('linked checkout without a trustworthy configuration source fails closed '+(placement?.kind??'omitted'),async t=>{
+for(const placement of [undefined,{kind:'caller'}])test('zero-config linked checkout inherits the verified main source '+(placement?.kind??'omitted'),async t=>{
  const f=placementFixture(t);f.row.createCwd=f.target;f.row.workspaceId='target';
  writeFileSync(join(f.home,'slp-runtime/state/peer-pool.json'),JSON.stringify(f.catalog));
  rmSync(join(f.repository,'.paseo-slp'),{recursive:true,force:true});
  const out=await f.run({...f.input,...(placement?{placement}:{})});
+ assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));
+ const chosen=out.phases.find(p=>p.name==='route-selected').value;
+ assert.equal(chosen.source.repository,f.repository);assert.equal(chosen.source.scope,'user');
+ const issued=out.phases.find(p=>p.name==='create-issued').value;
+ assert.equal(issued.labels['slp.protocol-sha'],undefined);
+ assert.equal(issued.warnings.includes('protocol-sha-unavailable'),false);
+ assert.equal(out.result.delivery.prompt.includes('Use '+f.repository+'/.paseo-slp/workspace-protocol.md'),false);
+ assert.ok(out.result.delivery.prompt.includes('Routing/protocol repository: '+f.repository));
+});
+
+test('zero-config lead formation does not name a missing protocol',async t=>{
+ const f=placementFixture(t,{role:'lead'});f.row.createCwd=f.target;f.row.workspaceId='target';
+ rmSync(join(f.repository,'.paseo-slp'),{recursive:true,force:true});
+ const out=await f.run({...f.input,role:'lead',placement:{kind:'caller'}});
+ assert.equal(out.result.state,'awaiting-caller-delivery',JSON.stringify(out));
+ assert.equal(out.result.delivery.prompt.includes('Use '+f.repository+'/.paseo-slp/workspace-protocol.md'),false);
+ const issued=out.phases.find(p=>p.name==='create-issued').value;
+ assert.equal(issued.labels['slp.protocol-sha'],undefined);
+ assert.equal(issued.warnings.includes('protocol-sha-unavailable'),false);
+});
+
+test('zero-config inherit drifts when main later gains a protocol file',async t=>{
+ const f=placementFixture(t);f.row.createCwd=f.target;f.row.workspaceId='target';
+ writeFileSync(join(f.home,'slp-runtime/state/peer-pool.json'),JSON.stringify(f.catalog));
+ rmSync(join(f.repository,'.paseo-slp'),{recursive:true,force:true});
+ f.setProviderHook(()=>{mkdirSync(join(f.repository,'.paseo-slp'),{recursive:true});writeFileSync(join(f.repository,'.paseo-slp/workspace-protocol.md'),'drifted\n');});
+ const out=await f.run(f.input);assert.equal(out.result.code,'ROUTE_DRIFT',JSON.stringify(out));
+ assert.equal(f.hostCalls.some(c=>c.kind==='create'),false);
+});
+
+test('linked checkout fails closed when the main protocol is a symlink',async t=>{
+ const f=placementFixture(t);f.row.createCwd=f.target;f.row.workspaceId='target';
+ const outside=join(f.dir,'outside-protocol.md');writeFileSync(outside,'secret\n');
+ rmSync(join(f.repository,'.paseo-slp/slp-routing.json'));
+ symlinkSync(outside,join(f.repository,'.paseo-slp/workspace-protocol.md'));
+ const out=await f.run(f.input);
  assert.equal(out.code??out.result?.code,'CAPABILITY_GAP',JSON.stringify(out));
- assert.match(out.message??out.result.message,/configuration source/i);assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+ assert.match(out.message??out.result.message,/configuration source/i);
+ assert.equal(f.hostCalls.some(c=>c.kind==='create'||c.kind==='open'),false);
+});
+
+test('bare linked checkout without core.worktree fails closed',async t=>{
+ const f=placementFixture(t);const bare=join(f.dir,'bare'),wt=join(f.dir,'bare-wt');
+ fixtureGit(f.dir,'clone','--bare',f.repository,bare);
+ fixtureGit(bare,'worktree','add','--detach',wt,'HEAD');
+ const placement=createFormationPlacement({repo:{gitCommonDir:realpathSync(bare)},host:()=>f.workspaceApi});
+ await assert.rejects(()=>placement.source({...f.row,createCwd:realpathSync(wt)}),error=>error.code==='CAPABILITY_GAP'&&/configuration source/i.test(error.message));
 });
 
 test('hop2 source pins revalidate before armed network and before delivery',async t=>{

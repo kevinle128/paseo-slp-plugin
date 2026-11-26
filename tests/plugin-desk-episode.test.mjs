@@ -316,7 +316,7 @@ for (const placement of ['shared-checkout', 'isolated', 'missing-protocol']) tes
   const intent = d.ledger().taskEntries.find(row => row.kind === 'action' && row.actionKind === 'create');
   if (placement === 'missing-protocol') {
     assert.equal(labels['slp.protocol-sha'], undefined);
-    assert.ok(intent.body.metadataWarnings.includes('protocol-sha-unavailable'));
+    assert.equal(intent.body.metadataWarnings.includes('protocol-sha-unavailable'), false);
   } else {
     assert.equal(labels['slp.protocol-sha'], createHash('sha256').update(protocol).digest('hex'));
     assert.equal(intent.body.labels['slp.protocol-sha'], labels['slp.protocol-sha']);

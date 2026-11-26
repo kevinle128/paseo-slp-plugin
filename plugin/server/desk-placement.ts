@@ -197,7 +197,10 @@ export function createFormationPlacement(deps: {
         const repository = directory(main); await common(repository, repo);
         if (directory(await git.top(repository)) !== repository) throw new Error("not the main checkout");
         const pins = configuration(repository);
-        if (Object.values(pins).some(value => value !== null)) return { repository, configuration: pins, inherited: true };
+        // Verified main is a source even with both files absent: null pins
+        // keep routing_intent inherit on the user pool. A later file on main
+        // or the target no longer matches these pins and drifts.
+        return { repository, configuration: pins, inherited: true };
       } catch (error) { if (error instanceof FormationPlacementError && error.code === "ROUTE_DRIFT") throw error; }
     }
     throw new FormationPlacementError("CAPABILITY_GAP", "linked checkout has no trustworthy same-repository configuration source; restore the main checkout routing/protocol configuration before formation; no implicit user-pool fallback");

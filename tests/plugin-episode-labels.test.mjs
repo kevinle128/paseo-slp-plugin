@@ -41,11 +41,57 @@ test('protocol identity hashes exact bytes and reuses an unchanged file without 
   } finally { fs.readFileSync = original; syncBuiltinESMExports(); }
 });
 
-test('missing protocol emits a bounded warning and no placeholder label', t => {
-  const metadata = seatMetadata({ role: 'peer', disposition: 'reviewer', repository: directory(t), runtimeSha: 'a'.repeat(64) });
+test('clean protocol absence omits the label without a warning', t => {
+  const present = directory(t);
+  const metadata = seatMetadata({ role: 'peer', disposition: 'reviewer', repository: present, runtimeSha: 'a'.repeat(64) });
+  assert.equal(protocolSha256(present), null);
   assert.deepEqual(metadata.labels, { 'slp.role': 'peer', 'slp.disposition': 'reviewer', 'slp.runtime-sha': 'a'.repeat(64) });
-  assert.deepEqual(metadata.warnings, ['protocol-sha-unavailable']);
+  assert.deepEqual(metadata.warnings, []);
+  const bare = fs.mkdtempSync(join(tmpdir(), 'slp-episode-bare-'));
+  t.after(() => fs.rmSync(bare, { recursive: true, force: true }));
+  assert.equal(protocolSha256(bare), null);
+  assert.deepEqual(seatMetadata({ role: 'lead', repository: bare, runtimeSha: 'b'.repeat(64) }).warnings, []);
   assert.equal(seatMetadata({ role: 'lead', repository: directory(t) }).labels['slp.disposition'], undefined);
+});
+
+test('a real protocol fault still warns and omits the label', t => {
+  const dir = directory(t);
+  const protocol = join(dir, '.paseo-slp/workspace-protocol.md');
+  fs.writeFileSync(protocol, 'x'.repeat(256 * 1024 + 1));
+  assert.deepEqual(seatMetadata({ role: 'peer', repository: dir, runtimeSha: 'a'.repeat(64) }).warnings, ['protocol-sha-unavailable']);
+  fs.rmSync(protocol);
+  const outside = join(dir, 'outside.md');
+  fs.writeFileSync(outside, 'linked\n');
+  fs.symlinkSync(outside, protocol);
+  assert.equal(seatMetadata({ role: 'peer', repository: dir }).warnings.includes('protocol-sha-unavailable'), true);
+  fs.rmSync(join(dir, '.paseo-slp'), { recursive: true });
+  fs.writeFileSync(join(dir, '.paseo-slp'), 'not-a-directory');
+  assert.equal(seatMetadata({ role: 'peer', repository: dir }).warnings.includes('protocol-sha-unavailable'), true);
+  assert.equal(seatMetadata({ role: 'peer', repository: join(dir, 'missing-repo') }).warnings.includes('protocol-sha-unavailable'), true);
+});
+
+test('a symlinked protocol directory warns and a symlinked repository still resolves', t => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'slp-episode-link-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const real = join(dir, 'real');
+  fs.mkdirSync(real);
+  const linkRepo = join(dir, 'link-repo');
+  fs.symlinkSync(real, linkRepo);
+  assert.equal(protocolSha256(linkRepo), null);
+  assert.deepEqual(seatMetadata({ role: 'peer', repository: linkRepo, runtimeSha: 'c'.repeat(64) }).warnings, []);
+  const bytes = Buffer.from('protocol\n');
+  fs.mkdirSync(join(real, '.paseo-slp'));
+  fs.writeFileSync(join(real, '.paseo-slp/workspace-protocol.md'), bytes);
+  assert.equal(protocolSha256(linkRepo), sha(bytes));
+  const linked = join(dir, 'linked-slp');
+  const outside = join(dir, 'outside');
+  fs.mkdirSync(linked);
+  fs.mkdirSync(outside);
+  fs.writeFileSync(join(outside, 'workspace-protocol.md'), 'secret\n');
+  fs.symlinkSync(outside, join(linked, '.paseo-slp'));
+  const fault = seatMetadata({ role: 'peer', repository: linked, runtimeSha: 'd'.repeat(64) });
+  assert.equal(fault.labels['slp.protocol-sha'], undefined);
+  assert.equal(fault.warnings.includes('protocol-sha-unavailable'), true);
 });
 
 test('creator classification distinguishes unlabelled roots from legacy children and unreadable metadata', () => {
@@ -153,8 +199,9 @@ for (const context of ['missing', 'invalid', 'valid']) test(`handoff ${context} 
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout);
     assert.deepEqual(output.warnings, planned.warnings);
-    assert.equal(output.warnings.includes('episode-context-missing'), context !== 'valid');
-    assert.ok(output.warnings.includes('protocol-sha-unavailable'));
+    if (context === 'valid') assert.equal(output.warnings, undefined);
+    else assert.equal((output.warnings ?? []).includes('episode-context-missing'), true);
+    assert.equal((output.warnings ?? []).includes('protocol-sha-unavailable'), false);
     if (flags[0] === '--emit') assert.deepEqual(output.create, planned.create);
   }
 });

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,8 @@ function agentState(home, id, fields) {
   mkdirSync(group, { recursive: true });
   writeFileSync(join(group, `${id}.json`), json({ id, ...fields }));
 }
+const daemonNotebook = (home, gitCommonDir) => join(home, 'slp-runtime', 'state', 'notebooks',
+  `${createHash('sha256').update(gitCommonDir).digest('hex')}.md`);
 function notebookFile(cwd) {
   const dir = join(cwd, '.paseo-slp');
   mkdirSync(dir, { recursive: true });
@@ -45,7 +48,9 @@ test('notebook resolves the active supervisor notebook from another checkout of 
   assert.equal(out.notebooks.length, 1);
   assert.equal(out.notebooks[0].agentId, 'sup');
   assert.equal(out.notebooks[0].notebook, join(worktree, '.paseo-slp', 'notebook.md'));
+  assert.equal(out.notebooks[0].notebookSource, 'repository');
   assert.equal(out.notebooks[0].notebookExists, true);
+  assert.equal(out.defaultNotebook, daemonNotebook(home, out.gitCommonDir));
   assert.equal(out.notebooks[0].status, 'running');
 });
 
@@ -61,7 +66,22 @@ test('notebook filters non-supervisors, unrelated repos, and sorts candidates by
   agentState(home, 'sup-other', { provider: 'slp-devin-supervisor', cwd: other, lastActivityAt: '2026-09-16T09:00:00Z' });
   const out = notebook(repo, home);
   assert.deepEqual(out.notebooks.map(n => n.agentId), ['sup-new', 'sup-old']);
+  assert.equal(out.notebooks[0].notebookSource, 'daemon');
+  assert.equal(out.notebooks[0].notebook, out.defaultNotebook);
   assert.equal(out.notebooks[0].notebookExists, false);
+});
+
+test('a symlinked .paseo-slp directory falls back to the daemon notebook', t => {
+  const dir = fixture(t), home = join(dir, 'home'), repo = gitRepo(join(dir, 'repo'));
+  const elsewhere = join(dir, 'elsewhere');
+  mkdirSync(elsewhere);
+  writeFileSync(join(elsewhere, 'notebook.md'), '# other\n');
+  symlinkSync(elsewhere, join(repo, '.paseo-slp'));
+  agentState(home, 'sup', { provider: 'slp-devin-supervisor', cwd: repo, lastActivityAt: '2026-09-16T10:00:00Z' });
+  const out = notebook(repo, home);
+  assert.equal(out.notebooks.length, 1);
+  assert.equal(out.notebooks[0].notebookSource, 'daemon');
+  assert.equal(out.notebooks[0].notebook, out.defaultNotebook);
 });
 
 test('notebook records a gap for a supervisor cwd that is not a git work tree', t => {
@@ -87,5 +107,13 @@ test('slp.mjs notebook emits locator output end to end', t => {
   agentState(home, 'sup', { provider: 'slp-devin-supervisor', cwd: repo, lastActivityAt: '2026-09-16T10:00:00Z' });
   const out = JSON.parse(execFileSync(process.execPath, [join(root, 'bin/slp.mjs'), 'notebook', repo, '--paseo-home', home], { encoding: 'utf8' }));
   assert.equal(out.notebooks.length, 1);
-  assert.equal(out.notebooks[0].notebook, join(repo, '.paseo-slp', 'notebook.md'));
+  assert.equal(out.notebooks[0].notebook, out.defaultNotebook);
+  assert.equal(out.notebooks[0].notebookSource, 'daemon');
+  assert.equal(out.notebooks[0].notebookExists, false);
+  const daemon = out.defaultNotebook;
+  mkdirSync(join(daemon, '..'), { recursive: true });
+  writeFileSync(daemon, '# daemon\n');
+  const again = notebook(repo, home);
+  assert.equal(again.notebooks[0].notebookExists, true);
+  assert.equal(again.defaultNotebook, daemon);
 });

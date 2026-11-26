@@ -17,7 +17,7 @@ record missing parent/report metadata as a gap.
 Compatibility/unbound hosts: prepare role/repository/workspaceId/assignment
 and optional taskLabel. prepare --live --emit create --paseo-home <verified-home>
 resolves saved profiles against fresh providers and emits arguments only.
-Use prepare --schema when unfamiliar. Preserve supplied live arrays verbatim or
+Use prepare --schema. Preserve supplied live arrays verbatim or
 use inventoryFile; inline providers win. --emit create validates; --check diagnoses
 rejection, not a required second pass. Verify settings/parent/placement.
 Profile/option pins precede protocol agent_mode; unresolved mode needs Human.
@@ -31,7 +31,7 @@ its result via delegation-execution.md. Runtime discovery and Jev decisions
 belong to that server operation. Full runtime pins select compatibility and
 must include required receipts. A linked caller without local routing/protocol
 inherits its configured same-Git main checkout; no trustworthy source means
-gap, not silent user fallback. Repository catalogs win even when empty;
+gap, not silent user fallback. Verified empty main inherits; routing_intent inherit uses user pool. Repository catalogs win even when empty;
 otherwise only Manager's user pool is fallback. Preserve routing_intent;
 report poolDrift/warnings for Human reconciliation, never auto-merge.
 
@@ -41,7 +41,7 @@ V1 Off/unconfigured selects a sole eligible option; several options return
 choices for selection.optionId. V1 settings/token semantics remain until Human
 conversion. Read references/jev-routing.md for shadow/armed/error, skipping unconfigured/off.
 Old optionId/catalogSha256/decision pins remain supported; armed decline/config/key/network
-failure blocks without default substitution. The runtime resolves the complete bundle
+failure blocks without default substitution; runtime resolves the complete bundle
 against fresh host providers before effects; eligibility proves no suitability/quota.
 Catalog hash, eligibility and Jev receipts must also be fresh.
 
@@ -51,12 +51,12 @@ Pick smallest sufficient capability/effort; record
 uncertainty or verification difficulty justifying stronger choices.
 Task labels, brief length, names/order/origin/disposition imply no tier.
 Choose selection.optionId; ambiguous options need selection.thinkingOptionId (null for default).
-Cross-provider uses routingRequirements.referenceAgentId and crossProvider:true. Runtime families differ (Devin to Codex);
+Cross-provider uses routingRequirements.referenceAgentId and crossProvider:true. Runtime families differ;
 missing reference is a gap. Preserve rules/effort limits and compatibility
 selectionSha256/routingContext. Shadow compares independent pairs; Armed pins
 Jev's pair. Relay routingSelection and receipt owner/requestId to Supervisor/Human;
 only the issuing Lead reads slp_operation_get. Jev probabilities are evidence,
-not a reported prose rationale. No effort overlay, retry ladder or extra budget.
+not a reported rationale. No effort overlay, retry ladder or extra budget.
 
 ## Explicit dispatch and compatibility
 

@@ -139,7 +139,7 @@ post-create update and no extra call to label it.
 | Label | Value |
 |---|---|
 | `slp.runtime-sha` | The installed binding's `candidateSha256` (the installed manifest's candidate sha for CLI preparation), never formation `runtimePin` or the newest bundle on disk. |
-| `slp.protocol-sha` | SHA-256 of exact protocol file bytes in the qualified effective protocol source checkout. Missing/unreadable files omit the label and warn. Existing placement pins hash canonical JSON strings and cannot be reused as raw-byte hashes. |
+| `slp.protocol-sha` | SHA-256 of exact protocol file bytes in the qualified effective protocol source checkout. A clean absence (no `.paseo-slp`, or a regular directory whose `workspace-protocol.md` is ENOENT) omits the label without a warning. A missing repository, a non-directory `.paseo-slp`, or a symlink, unreadable, oversized or unstable protocol file omits the label and warns `protocol-sha-unavailable`. Existing placement pins hash canonical JSON strings and cannot be reused as raw-byte hashes. |
 
 ### Formation link
 

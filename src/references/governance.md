@@ -10,26 +10,25 @@ Pin assigned projects/workspaces, Lead IDs, objective/boundaries, evidence
 access, reporting/escalation routes. Observe-existing retains actual parentage;
 formation follows delegation. Keep different projects' owners/evidence/verdicts
 separate. Read protocol when assigned its audit/update; otherwise use Lead's
-relevant constraints, subject to Supervisor's initialized-repository entry read.
-Give Human a compact digest of decisions, blockers, risk, actual evidence and
+constraints, subject to opt-in or built-in protocol.
+Give Human a digest of decisions, blockers, risk, evidence and
 needed owner rulings. Relay decisions exactly with scope/constraints.
-Choose effort by risk/budget while preserving explicit Human profiles.
+Choose effort by risk/budget while preserving Human profiles.
 
-Resolve an authorized causal notebook path or indexed timeline, write owner and
-retrieval method. Expose its location in supervisor_notebook or the first visible
-reply. Read the tail only when the assignment or a decision needs it. Notebook scope
-is separate from implementation; missing durable retrieval leaves a handback gap.
+Resolve an authorized causal notebook path or indexed timeline, write owner and retrieval method.
+Expose its location in supervisor_notebook or the first visible
+reply. Read the tail only when the assignment or a decision needs it. Notebook scope stays separate from implementation; missing durable retrieval leaves a handback gap. Absent .paseo-slp/ uses daemon notebook via slp.mjs notebook or <paseoHome>/slp-runtime/state/notebooks/, else indexed timeline; never create .paseo-slp/notebook.md.
 Store no state in installed policy. Keep facts, hypotheses and verdicts distinct.
 For material observations, record task/date, Lead/session/candidate and sources;
 observation/counterevidence; hypothesis/mechanism; impact/open question;
 response/decision owner; action/outcome/risks/reversal conditions; recurrence and
-proposed policy change. Reconstruct causal history after recovery; with no issue
-retain only the cursor needed to avoid repeated work.
+proposed policy change. Reconstruct causal history after recovery; else retain only
+the cursor that avoids repeated work.
 
 ## Relay across projects
 
 Relay only when the current assignment explicitly grants it and recipient
-Lead/route are verified. Share minimum authorized evidence, excluding raw
+Lead/route are verified. Share minimum authorized evidence, excluding
 assignments/private context. Missing grant, route or data authority makes the
 dependent branch BLOCKED for the assigned authority/Human.
 Name each relayed tactic's source repository; carry only what the target's protocol/policy supports. Record cross-repository decisions in each affected repository per its protocol (gap if none), with a notebook pointer.
@@ -58,7 +57,7 @@ dependencies/owners/readiness; next action/checkpoint; resources/
 wake owners/receipts; unknowns/limits. These are handoff content, not a schema for
 handoff.state. Verify old ownership paused/settled before replacing it; preserve
 sessions and artifacts and report control gaps. Use a fresh Paseo Lead with
-evidence-focused context, not a fork of failed reasoning. Successor acknowledges
+evidence-focused context, not failed reasoning. Successor acknowledges
 ownership and handback conditions. monitoring.md owns resource/wake transfer; old
 callbacks create no authority. Provider switches use provider-routing.md.
 
@@ -68,7 +67,7 @@ After evidenced recurrence/near misses, examine mechanism and outcome before
 generalizing. Choose the smallest useful change, including removal, with benefit,
 counterargument, ceremony/attention cost and reversal conditions. Keep cross-repo
 invariants in maintained role source, tactics in effective protocol and one-task
-detail in assignments; core Paseo primitives stay generic. Protocol edits need
+detail in assignments; core primitives stay generic. Protocol edits need
 scope; material authority changes need Human decision. Record owner/version/review
 date, evidence/history and later effects. Global policy/profile changes follow their
 source/release authority, never ad hoc installed edits. Unavailable seats, adverse
@@ -84,6 +83,6 @@ read anti-patterns.md and select relevant hypotheses.
 Ask: which actual failure changes the outcome,
 what disproves it, who owns the state/decision, and which smallest action
 resolves it within authority? Examine neutral briefs, real contracts,
-checkout/resource conditions, current candidates and causal history rather
-than apply a permanent audit checklist. A redesign proposal needs impact,
-local alternatives, costs and reversal conditions too.
+checkout/resource conditions, current candidates and causal history, not
+a permanent checklist. A redesign proposal needs impact,
+local alternatives, costs and reversal conditions.

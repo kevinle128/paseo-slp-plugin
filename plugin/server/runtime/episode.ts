@@ -1,6 +1,6 @@
 // Retrospective metadata only. None of these observations grant authority.
 import { createHash } from 'node:crypto';
-import { closeSync, constants, fstatSync, openSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type Episode = { episodeId: string; rootAgentId: string };
@@ -44,9 +44,32 @@ export function creatorClass(labels: Record<string, string> | null): 'labelled' 
 // Cache raw file identity, not just mtime/size: replacement and restored mtimes
 // must not reuse an unrelated protocol. Bounded for long-lived plugin processes.
 const protocols = new Map<string, { key: string; sha: string }>();
-export function protocolSha256(repository: string): string {
+// True when the directory is present as a regular directory. False is a clean
+// absence. A missing repository, or a file/symlink `.paseo-slp`, is an error.
+function protocolDirectoryPresent(repository: string): boolean {
+  let repoStat;
+  try { repoStat = statSync(repository); }
+  catch { throw new Error('repository is not an existing directory'); }
+  if (!repoStat.isDirectory()) throw new Error('repository is not a directory');
+  try {
+    const dirStat = lstatSync(join(repository, '.paseo-slp'));
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) throw new Error('protocol directory is not a regular directory');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+export function protocolSha256(repository: string): string | null {
+  if (!protocolDirectoryPresent(repository)) return null;
   const path = join(repository, '.paseo-slp/workspace-protocol.md');
-  const stat = statSync(path, { bigint: true });
+  let stat;
+  try { stat = lstatSync(path, { bigint: true }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('protocol is not a regular file');
   const key = [stat.dev, stat.ino, stat.mtimeNs, stat.ctimeNs, stat.size].join(':');
   const cached = protocols.get(path);
   if (cached?.key === key) return cached.sha;
@@ -70,7 +93,9 @@ export function seatMetadata(input: { role: string; disposition?: string; runtim
   if (input.disposition) labels['slp.disposition'] = input.disposition;
   if (input.runtimeSha && /^[a-f0-9]{64}$/.test(input.runtimeSha)) labels['slp.runtime-sha'] = input.runtimeSha;
   else warnings.push('runtime-sha-unavailable');
-  try { labels['slp.protocol-sha'] = protocolSha256(input.repository); }
-  catch { warnings.push('protocol-sha-unavailable'); }
+  try {
+    const protocol = protocolSha256(input.repository);
+    if (protocol !== null) labels['slp.protocol-sha'] = protocol;
+  } catch { warnings.push('protocol-sha-unavailable'); }
   return { labels, warnings };
 }
